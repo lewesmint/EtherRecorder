@@ -1,13 +1,25 @@
+PROJECT_NAME = EtherRecorder
 # Compiler (Auto-detect)
 CC ?= clang
 
 # Detect OS and Architecture
 UNAME_S := $(shell uname -s)
 ARCH := $(shell uname -m)
-CFLAGS_COMMON = -Wall -Wextra -I$(INC_DIR)
+CFLAGS_COMMON = -Wall -Wextra -I$(INC_DIR) -pthread
+# Detect OS and Architecture
+UNAME_S := $(shell uname -s)
+ARCH := $(shell uname -m)
+
 ifeq ($(UNAME_S), Darwin)
-    CFLAGS_COMMON += -target $(ARCH)-apple-macos11
+    ifeq ($(ARCH), arm64)
+        PLATFORM_ARCH = MacArm64
+    else
+        PLATFORM_ARCH = x86_64Mac
+    endif
+else
+    PLATFORM_ARCH = $(UNAME_S)_$(ARCH)
 endif
+
 
 # CFLAGS
 CFLAGS_DEBUG = $(CFLAGS_COMMON) -g -O0
@@ -22,18 +34,17 @@ else
 endif
 
 # Directories
-WORKSPACE = EtherRecorder
-PROJECT_DIR = $(WORKSPACE)/Project/$(ARCH)
+PROJECT_DIR = $(PROJECT_NAME)/$(PLATFORM_ARCH)
 BUILD_DIR = $(PROJECT_DIR)
-BIN_DIR = $(WORKSPACE)/$(ARCH)
+BIN_DIR = $(PLATFORM_ARCH)
 DEBUG_DIR = $(BUILD_DIR)/Debug
 RELEASE_DIR = $(BUILD_DIR)/Release
 DEBUG_BIN = $(BIN_DIR)/Debug
 RELEASE_BIN = $(BIN_DIR)/Release
 
 # Source and Object Files
-SRC_DIR = $(WORKSPACE)/src
-INC_DIR = $(WORKSPACE)/inc
+SRC_DIR = $(PROJECT_NAME)/src
+INC_DIR = $(PROJECT_NAME)/inc
 SRCS = $(wildcard $(SRC_DIR)/*.c)
 OBJS_DEBUG = $(patsubst $(SRC_DIR)/%.c, $(DEBUG_DIR)/%.o, $(SRCS))
 OBJS_RELEASE = $(patsubst $(SRC_DIR)/%.c, $(RELEASE_DIR)/%.o, $(SRCS))
@@ -78,13 +89,19 @@ $(DEBUG_BIN) $(RELEASE_BIN):
 
 # Clean targets
 clean:
+	@echo "Cleaning project..."
 	rm -rf $(BUILD_DIR) $(BIN_DIR)
+	@echo "Clean complete."
 
 clean_debug:
+	@echo "Cleaning debug build..."
 	rm -rf $(DEBUG_DIR) $(DEBUG_BIN)
+	@echo "Clean debug complete."
 
 clean_release:
+	@echo "Cleaning release build..."
 	rm -rf $(RELEASE_DIR) $(RELEASE_BIN)
+	@echo "Clean release complete."
 
 clean_all: clean_debug clean_release
 

@@ -1,0 +1,9 @@
+#ifndef APP_ERROR_H
+#define APP_ERROR_H
+
+#define APP_EXIT_SUCCESS 0
+#define APP_EXIT_FAILURE 1
+#define APP_CONFIG_ERROR 2
+#define APP_LOGGER_ERROR 3
+
+#endif // APP_ERROR_H
