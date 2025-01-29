@@ -2,7 +2,7 @@
 #include <stdio.h>
 
 #include "logger.h"
-#include "config.h""
+#include "config.h"
 #include "platform_utils.h"
 #include "platform_sockets.h"
 
