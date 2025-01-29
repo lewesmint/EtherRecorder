@@ -8,7 +8,7 @@ void foo_logger(void);
 void Logger_Init(void);
 
 // Log a message
-void Logger_Log(str);
+void Logger_Log(char* str);
 
 // Uninitialize the logger
 void Logger_Uninit();
