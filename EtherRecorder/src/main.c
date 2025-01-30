@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include <pthread.h>
 #include "logger.h"
 #include "config.h"
 #include "platform_utils.h"

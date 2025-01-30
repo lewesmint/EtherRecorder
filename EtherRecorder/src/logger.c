@@ -12,12 +12,12 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <time.h>
-#include <pthread.h>
+// #include <pthread.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <limits.h>
 #include <errno.h>
-#include <libgen.h>
+// #include <libgen.h>
 
 #include "platform_utils.h"
 #include "config.h"
@@ -28,7 +28,7 @@
 static FILE *log_fp = NULL; // Log file pointer
 static LogLevel log_level = LOG_DEBUG; // Current log level
 static LogOutput log_output = LOG_OUTPUT_BOTH; // Log output destination
-static pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER; // Mutex for thread safety
+static platform_mutex_t log_mutex; // Mutex for thread safety
 static char log_file_full_name[PATH_MAX]; // Log file name' with path
 static unsigned long long log_index = 0; // Log message index
 
@@ -69,12 +69,12 @@ const char* log_level_to_string(LogLevel level)
  * @param path The path for which to create directories.
  * @return 0 on success, -1 on failure.
  */
-static int create_directories(const char *path) {
+static int create_directories(const char* path) {
     char temp_path[LOG_BUFFER_SIZE];
     snprintf(temp_path, sizeof(temp_path), "%s", path);
-    char *dir = dirname(temp_path);
+    char* dir = platform_dirname(temp_path);
 
-    if (mkdir(dir, S_IRWXU) != 0 && errno != EEXIST) {
+    if (platform_mkdir(dir) != 0 && errno != EEXIST) {
         return -1;
     }
 
@@ -130,7 +130,7 @@ static void rotate_log_file() {
         snprintf(rotated_log_filename + strlen(rotated_log_filename), sizeof(rotated_log_filename) - strlen(rotated_log_filename), ".old");
         rename(log_file_full_name, rotated_log_filename);
         if (open_log_file() != 0) {
-            pthread_mutex_unlock(&log_mutex);
+            mutex_unlock(&log_mutex);
             exit(EXIT_FAILURE); // Exit if logging is critical
         }
     }
@@ -161,7 +161,8 @@ static void format_log_message(char *buffer, size_t buffer_size, LogLevel level,
  * @copydoc init_logger_from_config
  */
 int init_logger_from_config() {
-    pthread_mutex_lock(&log_mutex);
+    platform_mutex_init(&log_mutex);
+    mutex_lock(&log_mutex);
 
     const char* config_log_file_path = get_config_string("logger", "log_file_path", log_file_path);
     if (log_file_path != config_log_file_path) {

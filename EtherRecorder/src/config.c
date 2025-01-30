@@ -117,7 +117,7 @@ int get_config_int(const char *section, const char *key, int default_value) {
 int get_config_bool(const char *section, const char *key, int default_value) {
     const char *value = get_config_string(section, key, NULL);
     if (!value) return default_value;
-    return (strcasecmp(value, "true") == 0 || strcmp(value, "1") == 0);
+    return (platform_strcasecmp(value, "true") == 0 || strcmp(value, "1") == 0);
 }
 
 /**
