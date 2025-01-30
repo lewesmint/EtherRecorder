@@ -6,6 +6,8 @@
  * supporting output to a file and standard error.
  */
 
+#include "logger.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -13,6 +15,9 @@
 #include <pthread.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <limits.h>
+#include <errno.h>
+#include <libgen.h>
 
 #include "platform_utils.h"
 #include "config.h"
@@ -20,37 +25,18 @@
 #define LOG_BUFFER_SIZE 1024 // Buffer size for log messages
 #define MAX_LOG_FAILURES 100 // Maximum number of log failures before exiting
 
-/**
- * @enum LogLevel
- * @brief Defines different log levels.
- */
-typedef enum LogLevel {
-    LOG_DEBUG, /**< Debug level */
-    LOG_INFO,  /**< Info level */
-    LOG_WARN,  /**< Warning level */
-    LOG_ERROR, /**< Error level */
-    LOG_FATAL  /**< Fatal level */
-} LogLevel;
-
-/**
- * @enum LogOutput
- * @brief Defines the possible output destinations for logs.
- */
-typedef enum LogOutput {
-    LOG_OUTPUT_FILE,
-    LOG_OUTPUT_STDERR,
-    LOG_OUTPUT_BOTH
-} LogOutput;
-
 static FILE *log_fp = NULL; // Log file pointer
 static LogLevel log_level = LOG_DEBUG; // Current log level
 static LogOutput log_output = LOG_OUTPUT_BOTH; // Log output destination
 static pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER; // Mutex for thread safety
-static char log_filename[512]; // Log file name with path
+static char log_file_full_name[PATH_MAX]; // Log file name' with path
 static unsigned long long log_index = 0; // Log message index
-static char log_file_path[256]; // Log file path
-static char log_file_name[256]; // Log file name
-static off_t log_file_size; // Log file size before rotation
+
+// defaults if not read from the config file
+static char log_file_path[PATH_MAX] = "";    // Log file path
+static char log_file_name[256] = "foo.txt";  // Log file name
+static off_t log_file_size = 10485760;       // Log file size before rotation
+
 
 /**
  * @brief Generates a timestamped log filename.
@@ -79,22 +65,71 @@ const char* log_level_to_string(LogLevel level)
 }
 
 /**
+ * @brief Creates directories for the given path if they don't exist.
+ * @param path The path for which to create directories.
+ * @return 0 on success, -1 on failure.
+ */
+static int create_directories(const char *path) {
+    char temp_path[LOG_BUFFER_SIZE];
+    snprintf(temp_path, sizeof(temp_path), "%s", path);
+    char *dir = dirname(temp_path);
+
+    if (mkdir(dir, S_IRWXU) != 0 && errno != EEXIST) {
+        return -1;
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Opens the log file and manages the failure count.
+ * @return 0 on success, -1 on failure.
+ */
+static int open_log_file() {
+    static int log_failure_count = 0; // Counter for log failures
+
+    if (create_directories(log_file_full_name) != 0) {
+        fputs("Failed to create directories for log file\n", stderr);
+        return -1;
+    }
+
+    log_fp = fopen(log_file_full_name, "a");
+    if (!log_fp) {
+        if (log_failure_count == 0) {
+            char error_message[LOG_BUFFER_SIZE];
+            snprintf(error_message, sizeof(error_message), "Failed to open log file: %s\n", log_file_full_name);
+            fputs(error_message, stderr);
+        }
+
+        log_failure_count++;
+        if (log_failure_count >= MAX_LOG_FAILURES) {
+            char error_message[LOG_BUFFER_SIZE];
+            snprintf(error_message, sizeof(error_message), "Unrecoverable failure to open log file: %s\n. Exiting\n", log_file_full_name);
+            fputs(error_message, stderr);
+            exit(EXIT_FAILURE); // Exit if logging is impossible over 100 iterations
+        }
+        return 1;
+    } else {
+        char message[LOG_BUFFER_SIZE];
+        snprintf(message, sizeof(message), "Opened log file: %s", log_file_full_name);
+        log_failure_count = 0; // Reset the counter on successful log file open
+    }
+    return 0;
+}
+
+/**
  * @brief Rotates the log file if it exceeds the configured size.
  * @copydoc rotate_log_file
  */
 static void rotate_log_file() {
     struct stat st;
-    if (stat(log_filename, &st) == 0 && st.st_size >= log_file_size) {
+    if (stat(log_file_full_name, &st) == 0 && st.st_size >= log_file_size) {
         fclose(log_fp);
         char rotated_log_filename[512];
         generate_log_filename(rotated_log_filename, sizeof(rotated_log_filename));
         snprintf(rotated_log_filename + strlen(rotated_log_filename), sizeof(rotated_log_filename) - strlen(rotated_log_filename), ".old");
-        rename(log_filename, rotated_log_filename);
-        log_fp = fopen(log_filename, "a");
-        if (!log_fp) {
-            char error_message[LOG_BUFFER_SIZE];
-            snprintf(error_message, sizeof(error_message), "Failed to open log file: %s\n", log_filename);
-            fputs(error_message, stderr);
+        rename(log_file_full_name, rotated_log_filename);
+        if (open_log_file() != 0) {
             pthread_mutex_unlock(&log_mutex);
             exit(EXIT_FAILURE); // Exit if logging is critical
         }
@@ -128,27 +163,28 @@ static void format_log_message(char *buffer, size_t buffer_size, LogLevel level,
 int init_logger_from_config() {
     pthread_mutex_lock(&log_mutex);
 
-    const char *log_path = get_config_string("logger", "log_file_path", "/var/log/ether_recorder");
-    const char *log_file = get_config_string("logger", "log_file_name", "ether_recorder.log");
-    log_file_size = get_config_int("logger", "log_file_size", 10485760); // 10 MB
-
-    strncpy(log_file_path, log_path, sizeof(log_file_path) - 1);
-    log_file_path[sizeof(log_file_path) - 1] = '\0';
-
-    strncpy(log_file_name, log_file, sizeof(log_file_name) - 1);
-    log_file_name[sizeof(log_file_name) - 1] = '\0';
-
-    snprintf(log_filename, sizeof(log_filename), "%s/%s", log_file_path, log_file_name); // Sets log_filename
-    log_fp = fopen(log_filename, "a"); // Sets log_fp
-    if (!log_fp) {
-        char error_message[LOG_BUFFER_SIZE];
-        snprintf(error_message, sizeof(error_message), "Failed to open log file: %s\n", log_filename);
-        fputs(error_message, stderr);
-        pthread_mutex_unlock(&log_mutex);
-        exit(EXIT_FAILURE); // Exit if logging is critical
+    const char* config_log_file_path = get_config_string("logger", "log_file_path", log_file_path);
+    if (log_file_path != config_log_file_path) {
+        strncpy(log_file_path, config_log_file_path, sizeof(log_file_path) - 1);
+        log_file_path[sizeof(log_file_path) - 1] = '\0';
     }
+
+    const char* config_log_file_name = get_config_string("logger", "log_file_name", log_file_name);
+    if (log_file_name != config_log_file_name) { 
+        strncpy(log_file_name, config_log_file_name, sizeof(log_file_name) - 1);
+        log_file_name[sizeof(log_file_name) - 1] = '\0';
+    }
+
+    if (strlen(log_file_path) > 0) {
+        snprintf(log_file_full_name, sizeof(log_file_full_name), "%s%c%s", log_file_path, PATH_SEPARATOR, log_file_name);
+    } else {
+        snprintf(log_file_full_name, sizeof(log_file_full_name), "%s", log_file_name);
+    }
+
+    log_file_size = get_config_int("logger", "log_file_size", log_file_size);
+
     pthread_mutex_unlock(&log_mutex);
-    return 0;
+    return 1;
 }
 
 /**
@@ -171,29 +207,18 @@ void logger_set_output(LogOutput output)
  * @copydoc logger_log
  */
 void logger_log(LogLevel level, const char *format, ...) {
-    static int log_failure_count = 0; // Counter for log failures
-
     pthread_mutex_lock(&log_mutex);
 
-    if (log_fp == NULL) {
-        log_fp = fopen(log_filename, "a");
-        if (!log_fp) {
-            char error_message[LOG_BUFFER_SIZE];
-            snprintf(error_message, sizeof(error_message), "Failed to open log file: %s\n", log_filename);
-            fputs(error_message, stderr);
-            pthread_mutex_unlock(&log_mutex);
-
-            log_failure_count++;
-            if (log_failure_count >= MAX_LOG_FAILURES) {
-                exit(EXIT_FAILURE); // Exit if logging is impossible over 100 iterations
-            }
-            return;
-        }
-    }
-
-    log_failure_count = 0; // Reset the counter on successful log file open
+    LogOutput prior_log_output = log_output;
 
     rotate_log_file(); // Check and rotate log file if necessary
+
+    if (log_fp == NULL) {
+        if (open_log_file() != 0) {
+            // if the log file cannot be opened, log to stderr only
+            log_output = LOG_OUTPUT_STDERR;
+        }
+    }
 
     char log_buffer[LOG_BUFFER_SIZE];
     va_list args;
@@ -201,14 +226,17 @@ void logger_log(LogLevel level, const char *format, ...) {
     format_log_message(log_buffer, sizeof(log_buffer), level, format, args);
     va_end(args);
 
-    fputs(log_buffer, log_fp);
-    fputs("\n", log_fp);
-    fflush(log_fp);
-
+    if (log_output == LOG_OUTPUT_FILE || log_output == LOG_OUTPUT_BOTH) {
+        fputs(log_buffer, log_fp);
+        fputs("\n", log_fp);
+        fflush(log_fp);
+    }
     if (log_output == LOG_OUTPUT_STDERR || log_output == LOG_OUTPUT_BOTH) {
         fputs(log_buffer, stderr);
         fputs("\n", stderr);
     }
+
+    log_output = prior_log_output;
 
     pthread_mutex_unlock(&log_mutex);
 }

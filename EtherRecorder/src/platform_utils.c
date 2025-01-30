@@ -1,4 +1,5 @@
 #include "platform_utils.h"
+
 #include <pthread.h>
 #include <stdarg.h>
 #include <time.h>

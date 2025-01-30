@@ -37,21 +37,27 @@ static int init_app() {
     }
 
     // Initialize logger from configuration
-    // This will return false if the logger cannot be initialised
+    // This will only return false we can't even log to stderr
     if (!init_logger_from_config()) {
         return APP_LOGGER_ERROR;
     }
+
+    // deallocate memory used by the configuration
+    free_config();
 
     return APP_EXIT_SUCCESS;
 }
 
 static int app_exit() {
+    logger_log(LOG_INFO, "Exiting application");
     // Close the logger
     logger_close();
     return 0;
 }
 
 int main(int argc, char *argv[]) {
+    (void)argc;
+    (void)argv;
     int app_error = init_app();
     if (app_error != APP_EXIT_SUCCESS) {
         return app_error;

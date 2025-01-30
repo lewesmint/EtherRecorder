@@ -19,7 +19,7 @@ extern "C" {
  * @param filename The name of the configuration file.
  * @return true if the configuration was loaded successfully, false otherwise.
  */
-bool load_config(const char *filename);
+int load_config(const char *filename);
 
 /**
  * @brief Retrieves a string value from the configuration.
@@ -70,6 +70,11 @@ double get_config_float(const char *section, const char *key, double default_val
  * @return The hexadecimal value associated with the key.
  */
 uint64_t get_config_hex(const char *section, const char *key, uint64_t default_value);
+
+/**
+ * @brief Frees the memory allocated for the configuration entries.
+ */
+void free_config();
 
 #ifdef __cplusplus
 }

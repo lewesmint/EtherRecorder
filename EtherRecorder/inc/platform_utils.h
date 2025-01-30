@@ -6,6 +6,12 @@
 #include <time.h>
 #include "platform_mutex.h"
 
+#ifdef _WIN32
+#define PATH_SEPARATOR '\\'
+#else
+#define PATH_SEPARATOR '/'
+#endif
+
 // Function to get the current time as a formatted string
 void get_current_time(char *buffer, size_t buffer_size);
 

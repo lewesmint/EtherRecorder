@@ -1,10 +1,13 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#include "config.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <limits.h>
 
 #include "platform_utils.h"
 
@@ -37,19 +40,14 @@ static void trim_whitespace(char *str) {
     end[1] = '\0';
 }
 
-// Global variables to store configuration values
-char log_file_path[256];
-char log_file_name[256];
-unsigned long log_file_size;
-
 /**
  * @copydoc load_config
  */
-static int load_config(const char *filename) {
+int load_config(const char *filename) {
     FILE *file = fopen(filename, "r");
     if (!file) {
-        stream_print(stderr, "Failed to load configuration file: %s\n", filename);
-        return 0;
+        stream_print(stderr, "Failed to load configuration file: %s\n Default settings will be used\n", filename);
+        return 1; // Return 1 to indicate using default settings, we don't fail if the file is not found
     }
 
     char line[MAX_LINE_LENGTH];
@@ -58,6 +56,7 @@ static int load_config(const char *filename) {
     while (fgets(line, sizeof(line), file)) {
         trim_whitespace(line);
 
+        if (line[0] == '\0') continue; // Skip empty lines
         if (line[0] == ';' || line[0] == '#') continue; // Skip comments
         if (line[0] == '[') {
             char *end = strchr(line, ']');
@@ -89,7 +88,7 @@ static int load_config(const char *filename) {
     }
 
     fclose(file);
-    return 1;
+    return 1; // Return 1 to indicate success
 }
 
 /**
@@ -136,6 +135,19 @@ uint64_t get_config_hex(const char *section, const char *key, uint64_t default_v
     const char *value = get_config_string(section, key, NULL);
     if (!value) return default_value;
     return strtoull(value, NULL, 16);
+}
+
+/**
+ * @copydoc free_config
+ */
+void free_config() {
+    ConfigEntry *entry = config_entries;
+    while (entry) {
+        ConfigEntry *next = entry->next;
+        free(entry);
+        entry = next;
+    }
+    config_entries = NULL;
 }
 
 #endif // CONFIG_H

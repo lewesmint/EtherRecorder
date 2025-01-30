@@ -9,11 +9,14 @@
  */
 
 /**
- * @brief Output configuration options.
+ * @enum LogOutput
+ * @brief Defines the possible output destinations for logs.
  */
-#define LOG_OUTPUT_STDERR 1 /**< Only screen/stderr */
-#define LOG_OUTPUT_FILE   2 /**< Only file */
-#define LOG_OUTPUT_BOTH   3 /**< Both screen/stderr and file */
+typedef enum LogOutput {
+    LOG_OUTPUT_STDERR,  // Only screen/stderr
+    LOG_OUTPUT_FILE,    // Only screen/stderr
+    LOG_OUTPUT_BOTH     // Both screen/stderr and file
+} LogOutput;
 
 #ifdef __cplusplus
 extern "C" {
