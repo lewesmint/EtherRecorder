@@ -65,35 +65,6 @@ const char* log_level_to_string(LogLevel level)
 }
 
 /**
- * @brief Creates directories for the given path if they don't exist.
- * @param path The path for which to create directories.
- * @return 0 on success, -1 on failure.
- */
-static int create_directories(const char* path) {
-    char temp_path[LOG_BUFFER_SIZE];
-    snprintf(temp_path, sizeof(temp_path), "%s", path);
-    char* dir = platform_dirname(temp_path);
-
-    if (platform_mkdir(dir) != 0 && errno != EEXIST) {
-        return -1;
-    }
-
-    return 0;
-}
-
-// static int create_directories(const char *path) {
-//     char temp_path[LOG_BUFFER_SIZE];
-//     snprintf(temp_path, sizeof(temp_path), "%s", path);
-//     char *dir = dirname(temp_path);
-
-//     if (mkdir(dir, S_IRWXU) != 0 && errno != EEXIST) {
-//         return -1;
-//     }
-
-//     return 0;
-// }
-
-/**
  * @brief Opens the log file and manages the failure count.
  * @return 0 on success, -1 on failure.
  */
@@ -165,7 +136,7 @@ static void format_log_message(char *buffer, size_t buffer_size, LogLevel level,
     char message_buffer[LOG_BUFFER_SIZE];
     vsnprintf(message_buffer, sizeof(message_buffer), format, args);
 
-    snprintf(buffer, buffer_size, "%010llu %s [%d] %s", log_index++, time_str, level, message_buffer);
+    snprintf(buffer, buffer_size, "%010llu %s %s: %s", log_index++, time_str, log_level_to_string(level), message_buffer);
 }
 
 /**
@@ -196,7 +167,7 @@ int init_logger_from_config() {
 
     log_file_size = get_config_int("logger", "log_file_size", log_file_size);
 
-    pthread_mutex_unlock(&log_mutex);
+    unlock_mutex(&log_mutex);
     return 1;
 }
 
@@ -220,7 +191,7 @@ void logger_set_output(LogOutput output)
  * @copydoc logger_log
  */
 void logger_log(LogLevel level, const char *format, ...) {
-    pthread_mutex_lock(&log_mutex);
+    lock_mutex(&log_mutex);
 
     LogOutput prior_log_output = log_output;
 
@@ -251,7 +222,7 @@ void logger_log(LogLevel level, const char *format, ...) {
 
     log_output = prior_log_output;
 
-    pthread_mutex_unlock(&log_mutex);
+    unlock_mutex(&log_mutex);
 }
 
 /**
@@ -259,10 +230,10 @@ void logger_log(LogLevel level, const char *format, ...) {
  */
 void logger_close()
 {
-    pthread_mutex_lock(&log_mutex);
+    lock_mutex(&log_mutex);
     if (log_fp) {
         fclose(log_fp);
         log_fp = NULL;
     }
-    pthread_mutex_unlock(&log_mutex);
+    unlock_mutex(&log_mutex);
 }

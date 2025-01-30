@@ -20,7 +20,7 @@ void* thread_function(void* arg) {
     for (int i = 0; i < LOG_ITERATIONS; i++) {
         for (int j = 0; j < LOG_FATAL; j++) { // Assuming LOG_FATAL is the highest log level
             LogLevel level = (LogLevel)(j % (LOG_FATAL + 1));
-            logger_log(level, "Thread %s logging %s msg:%d", tinfo->name, log_level_to_string(level), count++);
+            logger_log(level, "%s logging %s msg:%d", tinfo->name, log_level_to_string(level), count++);
             platform_sleep(5); // Simulate some work
         }
     }

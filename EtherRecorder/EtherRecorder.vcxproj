@@ -32,6 +32,7 @@
     <ClCompile Include="src\main.c" />
     <ClCompile Include="src\platform_mutex.c" />
     <ClCompile Include="src\platform_sockets.c" />
+    <ClCompile Include="src\platform_threads.c" />
     <ClCompile Include="src\platform_utils.c" />
   </ItemGroup>
   <ItemGroup>
@@ -39,6 +40,7 @@
     <ClInclude Include="inc\logger.h" />
     <ClInclude Include="inc\platform_mutex.h" />
     <ClInclude Include="inc\platform_sockets.h" />
+    <ClInclude Include="inc\platform_threads.h" />
     <ClInclude Include="inc\platform_utils.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">

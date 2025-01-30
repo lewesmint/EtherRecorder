@@ -33,6 +33,9 @@
     <ClCompile Include="src\platform_mutex.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\platform_threads.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="inc\config.h">
@@ -48,6 +51,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="inc\platform_mutex.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\platform_threads.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
