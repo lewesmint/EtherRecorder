@@ -81,6 +81,18 @@ static int create_directories(const char* path) {
     return 0;
 }
 
+// static int create_directories(const char *path) {
+//     char temp_path[LOG_BUFFER_SIZE];
+//     snprintf(temp_path, sizeof(temp_path), "%s", path);
+//     char *dir = dirname(temp_path);
+
+//     if (mkdir(dir, S_IRWXU) != 0 && errno != EEXIST) {
+//         return -1;
+//     }
+
+//     return 0;
+// }
+
 /**
  * @brief Opens the log file and manages the failure count.
  * @return 0 on success, -1 on failure.
@@ -88,10 +100,10 @@ static int create_directories(const char* path) {
 static int open_log_file() {
     static int log_failure_count = 0; // Counter for log failures
 
-    if (create_directories(log_file_full_name) != 0) {
-        fputs("Failed to create directories for log file\n", stderr);
-        return -1;
-    }
+    // if (create_directories(log_file_full_name) != 0) {
+    //     fputs("Failed to create directories for log file\n", stderr);
+    //     return -1;
+    // }
 
     log_fp = fopen(log_file_full_name, "a");
     if (!log_fp) {
@@ -130,7 +142,7 @@ static void rotate_log_file() {
         snprintf(rotated_log_filename + strlen(rotated_log_filename), sizeof(rotated_log_filename) - strlen(rotated_log_filename), ".old");
         rename(log_file_full_name, rotated_log_filename);
         if (open_log_file() != 0) {
-            mutex_unlock(&log_mutex);
+            unlock_mutex(&log_mutex);
             exit(EXIT_FAILURE); // Exit if logging is critical
         }
     }
@@ -162,7 +174,7 @@ static void format_log_message(char *buffer, size_t buffer_size, LogLevel level,
  */
 int init_logger_from_config() {
     platform_mutex_init(&log_mutex);
-    mutex_lock(&log_mutex);
+    lock_mutex(&log_mutex);
 
     const char* config_log_file_path = get_config_string("logger", "log_file_path", log_file_path);
     if (log_file_path != config_log_file_path) {

@@ -22,34 +22,6 @@ uint64_t platform_strtoull(const char* str, char** endptr, int base) {
     return strtoull(str, endptr, base);
 }
 
-#ifdef _WIN32
-char* platform_dirname(char* path) {
-    static char buffer[PATH_MAX];
-    char* last_slash = strrchr(path, '\\');
-    if (last_slash) {
-        size_t length = last_slash - path;
-        strncpy(buffer, path, length);
-        buffer[length] = '\0';
-    }
-    else {
-        strcpy(buffer, ".");
-    }
-    return buffer;
-}
-
-int platform_mkdir(const char* path) {
-    return _mkdir(path);
-}
-#else
-char* platform_dirname(char* path) {
-    return dirname(path);
-}
-
-int platform_mkdir(const char* path) {
-    return mkdir(path, S_IRWXU);
-}
-#endif
-
 void get_current_time(char *buffer, size_t buffer_size) {
     time_t now = time(NULL);
     struct tm *t = localtime(&now);

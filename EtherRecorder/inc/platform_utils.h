@@ -8,23 +8,27 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <direct.h>
+#include <libgen.h>
 #define PATH_SEPARATOR '\\'
 #ifndef PATH_MAX
 #define PATH_MAX MAX_PATH
 #endif
+#define platform_mkdir(path) _mkdir(path)
+#define platform_dirname(path) _dirname(path)
 #include <string.h>
 #include <stdint.h>
 #else
+#include <sys/stat.h>
+#include <libgen.h>
 #define PATH_SEPARATOR '/'
+#define platform_mkdir(path) mkdir(path, S_IRWXU)
+#define platform_dirname(path) dirname(path)
 #endif
 
 int platform_strcasecmp(const char* s1, const char* s2);
 
 uint64_t platform_strtoull(const char* str, char** endptr, int base);
-
-char* platform_dirname(char* path);
-
-int platform_mkdir(const char* path);
 
 // Function to get the current time as a formatted string
 void get_current_time(char *buffer, size_t buffer_size);

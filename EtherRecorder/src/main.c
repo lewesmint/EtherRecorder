@@ -3,6 +3,7 @@
 #include "config.h"
 #include "platform_utils.h"
 #include "app_error.h" // Include the new header file
+#include "platform_threads.h"
 
 #define NUM_THREADS 5
 #define LOG_ITERATIONS 10000
@@ -66,18 +67,18 @@ int main(int argc, char *argv[]) {
     logger_log(LOG_ERROR, "Logger initialized successfully");
 
     // Create multiple threads
-    pthread_t threads[NUM_THREADS];
+    platform_thread_t threads[NUM_THREADS];
     thread_info_t thread_infos[NUM_THREADS];
     
     for (int i = 0; i < NUM_THREADS; i++) {
         thread_infos[i].id = i;
         snprintf(thread_infos[i].name, sizeof(thread_infos[i].name), "Thread-%d", i);
-        pthread_create(&threads[i], NULL, thread_function, &thread_infos[i]);
+        platform_thread_create(&threads[i], thread_function, &thread_infos[i]);
     }
     
     // Wait for threads to finish
     for (int i = 0; i < NUM_THREADS; i++) {
-        pthread_join(threads[i], NULL);
+        platform_thread_join(threads[i], NULL);
     }
 
     return app_exit();
