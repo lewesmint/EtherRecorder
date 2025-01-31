@@ -12,12 +12,11 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <time.h>
-// #include <pthread.h>
+
 #include <string.h>
 #include <sys/stat.h>
 #include <limits.h>
 #include <errno.h>
-// #include <libgen.h>
 
 #include "platform_utils.h"
 #include "config.h"
@@ -33,9 +32,9 @@ static char log_file_full_name[PATH_MAX]; // Log file name' with path
 static unsigned long long log_index = 0; // Log message index
 
 // defaults if not read from the config file
-static char log_file_path[PATH_MAX] = "";    // Log file path
-static char log_file_name[256] = "foo.txt";  // Log file name
-static off_t log_file_size = 10485760;       // Log file size before rotation
+static char log_file_path[MAX_PATH] = "";              // Log file path
+static char log_file_name[MAX_PATH] = "log_file.txt";  // Log file name
+static off_t log_file_size = 10485760;                 // Log file size before rotation
 
 
 /**
@@ -70,11 +69,21 @@ const char* log_level_to_string(LogLevel level)
  */
 static int open_log_file() {
     static int log_failure_count = 0; // Counter for log failures
+    static int directory_creation_failure_count = 0; // Counter for directory creation failures
 
-    // if (create_directories(log_file_full_name) != 0) {
-    //     fputs("Failed to create directories for log file\n", stderr);
-    //     return -1;
-    // }
+    char directory_path[MAX_PATH];
+
+    // Strip the directory path from the full file path
+    strip_directory_path(log_file_full_name, directory_path, sizeof(directory_path));
+    
+    // Create the directories for the log file if they don't exist
+    if (create_directories(directory_path) != 0) {
+        if (directory_creation_failure_count < 5) {
+            // don't go one forever
+            stream_print(stderr, "Failed to create directory structure for logging%s\n", directory_path);
+            directory_creation_failure_count++;
+        }
+    }
 
     log_fp = fopen(log_file_full_name, "a");
     if (!log_fp) {
@@ -93,8 +102,6 @@ static int open_log_file() {
         }
         return 1;
     } else {
-        char message[LOG_BUFFER_SIZE];
-        snprintf(message, sizeof(message), "Opened log file: %s", log_file_full_name);
         log_failure_count = 0; // Reset the counter on successful log file open
     }
     return 0;
@@ -153,11 +160,15 @@ int init_logger_from_config() {
         log_file_path[sizeof(log_file_path) - 1] = '\0';
     }
 
+    sanitise_path(log_file_path);
+
     const char* config_log_file_name = get_config_string("logger", "log_file_name", log_file_name);
     if (log_file_name != config_log_file_name) { 
         strncpy(log_file_name, config_log_file_name, sizeof(log_file_name) - 1);
         log_file_name[sizeof(log_file_name) - 1] = '\0';
     }
+
+    sanitise_path(log_file_name);
 
     if (strlen(log_file_path) > 0) {
         snprintf(log_file_full_name, sizeof(log_file_full_name), "%s%c%s", log_file_path, PATH_SEPARATOR, log_file_name);

@@ -55,6 +55,11 @@ const char* log_level_to_string(LogLevel level);
  */
 void logger_log(LogLevel level, const char *format, ...);
 
+
+void logger_set_level(LogLevel level);
+
+void logger_set_output(LogOutput output);
+
 /**
  * @brief Closes the logger and releases any resources.
  */

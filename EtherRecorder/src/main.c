@@ -1,8 +1,9 @@
 #include <stdio.h>
+
+#include "app_error.h"
 #include "logger.h"
 #include "config.h"
 #include "platform_utils.h"
-#include "app_error.h" // Include the new header file
 #include "platform_threads.h"
 
 #define NUM_THREADS 5
@@ -29,6 +30,7 @@ void* thread_function(void* arg) {
 }
 
 static int init_app() {
+    init_console();
     // Load configuration, if config not found use defaults
     // This will only return false if the defaults cannot be set
     // for some reason.
@@ -84,3 +86,4 @@ int main(int argc, char *argv[]) {
     return app_exit();
     
 }
+

@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "logger.h": "c",
+        "platform_utils.h": "c"
+    }
+}
