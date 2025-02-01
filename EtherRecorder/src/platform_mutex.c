@@ -3,7 +3,9 @@
 #ifdef _WIN32
 
 /**
- * @copydoc platform_mutex_init
+ * @brief 
+ * 
+ */ @copydoc platform_mutex_init
  */
 int platform_mutex_init(PlatformMutex_T *mutex) {
     *mutex = CreateMutex(NULL, FALSE, NULL);
@@ -34,7 +36,7 @@ int platform_mutex_destroy(PlatformMutex_T *mutex) {
 /**
  * @copydoc platform_cond_init
  */
-int platform_cond_init(PlatformCond_T *cond) {
+int platform_cond_init(PlatformCondition_T *cond) {
     InitializeConditionVariable(cond);
     return 0;
 }
@@ -42,14 +44,14 @@ int platform_cond_init(PlatformCond_T *cond) {
 /**
  * @copydoc platform_cond_wait
  */
-int platform_cond_wait(PlatformCond_T *cond, PlatformMutex_T *mutex) {
+int platform_cond_wait(PlatformCondition_T *cond, PlatformMutex_T *mutex) {
     return (SleepConditionVariableCS(cond, mutex, INFINITE) != 0) ? 0 : -1;
 }
 
 /**
  * @copydoc platform_cond_signal
  */
-int platform_cond_signal(PlatformCond_T *cond) {
+int platform_cond_signal(PlatformCondition_T *cond) {
     WakeConditionVariable(cond);
     return 0;
 }
@@ -57,7 +59,7 @@ int platform_cond_signal(PlatformCond_T *cond) {
 /**
  * @copydoc platform_cond_destroy
  */
-int platform_cond_destroy(PlatformCond_T *cond) {
+int platform_cond_destroy(PlatformCondition_T *cond) {
     // No explicit destroy function for CONDITION_VARIABLE in Windows
     return 0;
 }
@@ -95,28 +97,28 @@ int platform_mutex_destroy(PlatformMutex_T *mutex) {
 /**
  * @copydoc platform_cond_init
  */
-int platform_cond_init(PlatformCond_T *cond) {
+int platform_cond_init(PlatformCondition_T *cond) {
     return pthread_cond_init(cond, NULL);
 }
 
 /**
  * @copydoc platform_cond_wait
  */
-int platform_cond_wait(PlatformCond_T *cond, PlatformMutex_T *mutex) {
+int platform_cond_wait(PlatformCondition_T *cond, PlatformMutex_T *mutex) {
     return pthread_cond_wait(cond, mutex);
 }
 
 /**
  * @copydoc platform_cond_signal
  */
-int platform_cond_signal(PlatformCond_T *cond) {
+int platform_cond_signal(PlatformCondition_T *cond) {
     return pthread_cond_signal(cond);
 }
 
 /**
  * @copydoc platform_cond_destroy
  */
-int platform_cond_destroy(PlatformCond_T *cond) {
+int platform_cond_destroy(PlatformCondition_T *cond) {
     return pthread_cond_destroy(cond);
 }
 

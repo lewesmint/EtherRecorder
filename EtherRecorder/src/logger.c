@@ -30,13 +30,13 @@
 static FILE *log_fp = NULL; // Log file pointer
 static LogLevel log_level = LOG_DEBUG; // Current log level
 static LogOutput log_output = LOG_OUTPUT_BOTH; // Log output destination
-static PlatformMutex_T log_mutex; // Mutex for thread safety
+static PlatformMutex_T logging_mutex; // Mutex for thread safety
 static char log_file_full_name[PATH_MAX]; // Log file name' with path
 static unsigned long long log_index = 0; // Log message index
 
 // defaults if not read from the config file
 static char log_file_path[MAX_PATH] = "";              // Log file path
-static char log_file_name[MAX_PATH] = "log_file.txt";  // Log file name
+static char log_file_name[MAX_PATH] = "log_file.log";  // Log file name
 static off_t log_file_size = 10485760;                 // Log file size before rotation
 
 // Thread-specific log file
@@ -48,7 +48,6 @@ static int logging_thread_started = 0; // Flag to indicate if logging thread has
 
 /**
  * @brief 
- * 
  * @brief Sets the log file for the current thread.
  * @param filename The log file name to set.
  */
@@ -140,7 +139,7 @@ static void rotate_log_file() {
         snprintf(rotated_log_filename + strlen(rotated_log_filename), sizeof(rotated_log_filename) - strlen(rotated_log_filename), ".old");
         rename(log_file_full_name, rotated_log_filename);
         if (open_log_file() != 0) {
-            unlock_mutex(&log_mutex);
+            unlock_mutex(&logging_mutex);
             exit(EXIT_FAILURE); // Exit if logging is critical
         }
     }
@@ -176,7 +175,7 @@ static void format_log_message(char *buffer, size_t buffer_size, LogLevel level,
  * @param message The formatted log message.
  */
 void log_immediately(const char *message) {
-    lock_mutex(&log_mutex);
+    lock_mutex(&logging_mutex);
 
     LogOutput prior_log_output = log_output;
 
@@ -187,6 +186,10 @@ void log_immediately(const char *message) {
             // if the log file cannot be opened, log to stderr only
             log_output = LOG_OUTPUT_STDERR;
         }
+    }
+
+    if (!message) {
+        message = "Trying to log blank message";
     }
 
     if (log_output == LOG_OUTPUT_FILE || log_output == LOG_OUTPUT_BOTH) {
@@ -201,7 +204,7 @@ void log_immediately(const char *message) {
 
     log_output = prior_log_output;
 
-    unlock_mutex(&log_mutex);
+    unlock_mutex(&logging_mutex);
 }
 
 /**
@@ -240,8 +243,8 @@ void logger_log(LogLevel level, const char *format, ...) {
  * @return 1 on success, 0 on failure.
  */
 bool init_logger_from_config(char *logger_init_result) {
-    platform_mutex_init(&log_mutex);
-    platform_mutex_lock(&log_mutex);
+    init_mutex(&logging_mutex);
+    lock_mutex(&logging_mutex);
 
     const char* config_log_file_path = get_config_string("logger", "log_file_path", log_file_path);
     if (log_file_path != config_log_file_path) {
@@ -271,7 +274,7 @@ bool init_logger_from_config(char *logger_init_result) {
     log_queue_init(&log_queue);
 
     snprintf(logger_init_result, LOG_MSG_BUFFER_SIZE, "Logger initialised. App logging to %s", log_file_full_name);
-    platform_mutex_unlock(&log_mutex);
+    unlock_mutex(&logging_mutex);
     return true;
 }
 
@@ -329,12 +332,12 @@ void logger_set_output(LogOutput output) {
  * @brief Closes the logger and releases resources.
  */
 void logger_close() {
-    lock_mutex(&log_mutex);
+    lock_mutex(&logging_mutex);
     if (log_fp) {
         fclose(log_fp);
         log_fp = NULL;
     }
-    unlock_mutex(&log_mutex);
+    unlock_mutex(&logging_mutex);
 
     if (logging_thread_started) {
         // Wait for logging thread to finish (it won't, so this is just for completeness)

@@ -2,6 +2,7 @@
     "files.associations": {
         "logger.h": "c",
         "platform_utils.h": "c",
-        "platform_threads.h": "c"
+        "platform_threads.h": "c",
+        "string.h": "c"
     }
 }

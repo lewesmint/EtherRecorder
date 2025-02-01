@@ -8,14 +8,19 @@
 #include "logger.h" // Include the logger header
 #include "app_thread.h" // Include the app_thread header
 
-
 LogQueue_T log_queue; // Define the log queue
 
+/**
+ * @copydoc log_queue_init
+ */
 void log_queue_init(LogQueue_T *queue) {
     atomic_init(&queue->head, 0);
     atomic_init(&queue->tail, 0);
 }
 
+/**
+ * @copydoc log_queue_push
+ */
 int log_queue_push(LogQueue_T *queue, LogLevel level, const char *message) {
     size_t head = atomic_load(&queue->head);
     size_t next_head = (head + 1) % LOG_QUEUE_SIZE;
@@ -35,6 +40,9 @@ int log_queue_push(LogQueue_T *queue, LogLevel level, const char *message) {
     return 0;
 }
 
+/**
+ * @copydoc log_queue_pop
+ */
 int log_queue_pop(LogQueue_T *queue, LogEntry_T *entry) {
     size_t tail = atomic_load(&queue->tail);
 
@@ -48,21 +56,20 @@ int log_queue_pop(LogQueue_T *queue, LogEntry_T *entry) {
     return 0;
 }
 
-// void* log_thread_function(void* arg) {
-//     return launch_thread_function(log_thread_function_impl, arg, "log");
+// /**
+//  * @copydoc log_thread_function_impl
+//  */
+// void* log_thread_function_impl(void* arg) {
+//     (void)arg;
+//     LogEntry_T entry;
+
+//     while (1) {
+//         while (log_queue_pop(&log_queue, &entry) == 0) {
+//             // Log using the logger function
+//             log_immediately(entry.message);
+//         }
+//         platform_sleep(10); // Sleep for a short while before checking the queue again
+//     }
+
+//     return NULL;
 // }
-
-void* log_thread_function_impl(void* arg) {
-    (void)arg;
-    LogEntry_T entry;
-
-    while (1) {
-        while (log_queue_pop(&log_queue, &entry) == 0) {
-            // Log using the logger function
-            log_immediately(entry.message);
-        }
-        platform_sleep(10); // Sleep for a short while before checking the queue again
-    }
-
-    return NULL;
-}

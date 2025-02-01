@@ -6,13 +6,13 @@
 #include "platform_threads.h"
 #include "app_config.h"
 #include "logger.h"
-
+#include "log_queue.h"
 
 THREAD_LOCAL static const char *thread_label = NULL;
 
-PlatformCond_T logger_cond;
-PlatformMutex_T logger_mutex;
-int logger_ready = 0;
+static PlatformCondition_T logger_thread_condition;
+static PlatformMutex_T logger_thread_mutex;
+static int logger_ready = 0;
 
 void* app_thread(AppThreadArgs_T* thread_args) {
     if (thread_args->init_func)
@@ -74,18 +74,56 @@ void* server_thread_function(void* arg) {
     return NULL;
 }
 
+// void* logger_thread_function(void* arg) {
+//     AppThreadArgs_T* thread_info = (AppThreadArgs_T*)arg;
+//     set_thread_label(thread_info->label);
+//     logger_log(LOG_INFO, "Logger thread started");
+//     // Signal that the logger thread is ready
+//     lock_mutex(&logger_thread_mutex);
+//     logger_ready = 1;
+//     platform_cond_signal(&logger_thread_condition);
+//     unlock_mutex(&logger_thread_mutex);
+//     // Logger-specific functionality here
+//     return NULL;
+// }
+
 void* logger_thread_function(void* arg) {
     AppThreadArgs_T* thread_info = (AppThreadArgs_T*)arg;
     set_thread_label(thread_info->label);
     logger_log(LOG_INFO, "Logger thread started");
+
+    // Simulate some delay to being ready 
+    // to test that thread wait for the logger
+    platform_sleep(10);
+
     // Signal that the logger thread is ready
-    platform_mutex_lock(&logger_mutex);
+    lock_mutex(&logger_thread_mutex);
     logger_ready = 1;
-    platform_cond_signal(&logger_cond);
-    platform_mutex_unlock(&logger_mutex);
-    // Logger-specific functionality here
+    platform_cond_signal(&logger_thread_condition);
+    unlock_mutex(&logger_thread_mutex);
+
+    LogEntry_T entry;
+    bool running = true; // Flag to handle graceful shutdown later
+
+    while (running) {
+        while (log_queue_pop(&log_queue, &entry) == 0) {
+            log_immediately(entry.message);
+        }
+
+        // Simulate periodic work and allow for a shutdown check
+        platform_sleep(10);
+
+        // TODO: Implement a shutdown flag mechanism
+        // Check some global flag to determine when to exit
+        // if (shutdown_requested()) {
+        //    running = 0;
+        // }
+    }
+
+    logger_log(LOG_INFO, "Logger thread shutting down.");
     return NULL;
 }
+
 
 // Stub functions
 void* pre_create_stub(void* arg ) {
@@ -108,23 +146,25 @@ void* exit_stub(void* arg) {
     return 0;
 }
 
+static void* init_wait_for_logger(void* arg);
+
 AppThreadArgs_T all_threads[] = {
-    {
-        .label = "LOGGER",
-        .func = logger_thread_function,
-        .data = NULL,
-        .pre_create_func = pre_create_stub,
-        .post_create_func = post_create_stub,
-        .init_func = init_stub,
-        .exit_func = exit_stub
-    },
+    // {
+    //     .label = "LOGGER",
+    //     .func = logger_thread_function,
+    //     .data = NULL,
+    //     .pre_create_func = pre_create_stub,
+    //     .post_create_func = post_create_stub,
+    //     .init_func = init_stub,
+    //     .exit_func = exit_stub
+    // },
     {
         .label = "CLIENT",
         .func = client_thread_function,
         .data = NULL,
         .pre_create_func = pre_create_stub,
         .post_create_func = post_create_stub,
-        .init_func = init_stub,
+        .init_func = init_wait_for_logger,
         .exit_func = exit_stub
     },
     {
@@ -133,7 +173,7 @@ AppThreadArgs_T all_threads[] = {
         .data = NULL,
         .pre_create_func = pre_create_stub,
         .post_create_func = post_create_stub,
-        .init_func = init_stub,
+        .init_func = init_wait_for_logger,
         .exit_func = exit_stub
     },
     {
@@ -142,7 +182,7 @@ AppThreadArgs_T all_threads[] = {
         .data = NULL,
         .pre_create_func = pre_create_stub,
         .post_create_func = post_create_stub,
-        .init_func = init_stub,
+        .init_func = init_wait_for_logger,
         .exit_func = exit_stub
     },
     {
@@ -151,7 +191,7 @@ AppThreadArgs_T all_threads[] = {
         .data = NULL,
         .pre_create_func = pre_create_stub,
         .post_create_func = post_create_stub,
-        .init_func = init_stub,
+        .init_func = init_wait_for_logger,
         .exit_func = exit_stub
     },
     {
@@ -160,27 +200,38 @@ AppThreadArgs_T all_threads[] = {
         .data = NULL,
         .pre_create_func = pre_create_stub,
         .post_create_func = post_create_stub,
+        .init_func = init_wait_for_logger,
+        .exit_func = exit_stub
+    },
+    {
+        .label = "LOGGER",
+        .func = logger_thread_function,
+        .data = NULL,
+        .pre_create_func = pre_create_stub,
+        .post_create_func = post_create_stub,
         .init_func = init_stub,
         .exit_func = exit_stub
     }
 };
 
-void init_thread() {
+static void* init_wait_for_logger(void* arg) {
+    (void) arg;
     // Wait for the logger thread to signal that it is ready
-    platform_mutex_lock(&logger_mutex);
+    lock_mutex(&logger_thread_mutex);
     while (!logger_ready) {
-        platform_cond_wait(&logger_cond, &logger_mutex);
+        platform_cond_wait(&logger_thread_condition, &logger_thread_mutex);
     }
-    platform_mutex_unlock(&logger_mutex);
+    unlock_mutex(&logger_thread_mutex);
 
     // Thread-specific initialization code
     // ...
+    return 0;
 }
 
-void start_threads() {
+void start_threads(void) {
     // Initialize the logger condition and mutex
-    platform_cond_init(&logger_cond);
-    platform_mutex_init(&logger_mutex);
+    platform_cond_init(&logger_thread_condition);
+    platform_mutex_init(&logger_thread_mutex);
 
     // Start the logger thread first
     create_app_thread(&all_threads[0]);

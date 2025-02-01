@@ -4,11 +4,11 @@
 #ifdef _WIN32
 #include <windows.h>
 typedef HANDLE PlatformMutex_T;
-typedef CONDITION_VARIABLE PlatformCond_T;
+typedef CONDITION_VARIABLE PlatformCondition_T;
 #else
 #include <pthread.h>
 typedef pthread_mutex_t PlatformMutex_T;
-typedef pthread_cond_t PlatformCond_T;
+typedef pthread_cond_t PlatformCondition_T;
 #endif
 
 /**
@@ -49,7 +49,7 @@ int platform_mutex_destroy(PlatformMutex_T *mutex);
  * @param cond Pointer to the condition variable to initialize.
  * @return int 0 on success, -1 on failure.
  */
-int platform_cond_init(PlatformCond_T *cond);
+int platform_cond_init(PlatformCondition_T *cond);
 
 /**
  * @brief Waits on a condition variable.
@@ -58,7 +58,7 @@ int platform_cond_init(PlatformCond_T *cond);
  * @param mutex Pointer to the mutex to lock while waiting.
  * @return int 0 on success, -1 on failure.
  */
-int platform_cond_wait(PlatformCond_T *cond, PlatformMutex_T *mutex);
+int platform_cond_wait(PlatformCondition_T *cond, PlatformMutex_T *mutex);
 
 /**
  * @brief Signals a condition variable.
@@ -66,7 +66,7 @@ int platform_cond_wait(PlatformCond_T *cond, PlatformMutex_T *mutex);
  * @param cond Pointer to the condition variable to signal.
  * @return int 0 on success, -1 on failure.
  */
-int platform_cond_signal(PlatformCond_T *cond);
+int platform_cond_signal(PlatformCondition_T *cond);
 
 /**
  * @brief Destroys a condition variable.
@@ -74,6 +74,6 @@ int platform_cond_signal(PlatformCond_T *cond);
  * @param cond Pointer to the condition variable to destroy.
  * @return int 0 on success, -1 on failure.
  */
-int platform_cond_destroy(PlatformCond_T *cond);
+int platform_cond_destroy(PlatformCondition_T *cond);
 
 #endif // PLATFORM_MUTEX_H
