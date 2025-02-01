@@ -6,7 +6,7 @@
 typedef HANDLE platform_thread_t;
 #else
 #include <pthread.h>
-typedef pthread_t platform_thread_t;
+typedef pthread_t PlatformThread_T;
 #endif
 
 #ifdef _WIN32
@@ -16,7 +16,7 @@ typedef HANDLE platform_thread_t;
 #else
 #include <pthread.h>
 #define THREAD_LOCAL __thread
-typedef pthread_t platform_thread_t;
+typedef pthread_t PlatformThread_T;
 #endif
 
 
@@ -25,7 +25,7 @@ typedef pthread_t platform_thread_t;
  * @param arg The argument passed to the thread function.
  * @return The return value of the thread function.
  */
-typedef void* (*thread_func_t)(void* arg);
+typedef void* (*ThreadFunc_T)(void* arg);
 
 
 /**
@@ -36,7 +36,7 @@ typedef void* (*thread_func_t)(void* arg);
  * @param arg Argument to pass to the thread function.
  * @return 0 on success, non-zero on failure.
  */
-int platform_thread_create(platform_thread_t *thread, thread_func_t func, void *arg);
+int platform_thread_create(PlatformThread_T *thread, ThreadFunc_T func, void *arg);
 
 /**
  * @brief Waits for a thread to complete.
@@ -45,6 +45,6 @@ int platform_thread_create(platform_thread_t *thread, thread_func_t func, void *
  * @param retval Pointer to store the return value of the thread.
  * @return 0 on success, non-zero on failure.
  */
-int platform_thread_join(platform_thread_t thread, void **retval);
+int platform_thread_join(PlatformThread_T thread, void **retval);
 
 #endif // PLATFORM_THREADS_H

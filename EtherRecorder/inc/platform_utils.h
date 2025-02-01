@@ -42,10 +42,10 @@ uint64_t platform_strtoull(const char* str, char** endptr, int base);
 void get_current_time(char *buffer, size_t buffer_size);
 
 // Function to lock a mutex
-void lock_mutex(platform_mutex_t *mutex);
+void lock_mutex(PlatformMutex_T *mutex);
 
 // Function to unlock a mutex
-void unlock_mutex(platform_mutex_t *mutex);
+void unlock_mutex(PlatformMutex_T *mutex);
 
 // Stream print function
 void stream_print(FILE *stream, const char *format, ...);

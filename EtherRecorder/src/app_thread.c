@@ -1,16 +1,20 @@
 #include "app_thread.h"
 
-#include <semaphore.h>
 #include <string.h>
 
-#include "config.h"
+#include "platform_utils.h"
 #include "platform_threads.h"
+#include "app_config.h"
+#include "logger.h"
+
 
 THREAD_LOCAL static const char *thread_label = NULL;
 
-// static sem_t logger_semaphore;
+PlatformCond_T logger_cond;
+PlatformMutex_T logger_mutex;
+int logger_ready = 0;
 
-void* app_thread(app_thread_args_t* thread_args) {
+void* app_thread(AppThreadArgs_T* thread_args) {
     if (thread_args->init_func)
         thread_args->init_func(thread_args);
     thread_args->func(thread_args);
@@ -20,10 +24,10 @@ void* app_thread(app_thread_args_t* thread_args) {
     return NULL;
 }
 
-void create_app_thread(app_thread_args_t *thread) {
+void create_app_thread(AppThreadArgs_T *thread) {
     if (thread->pre_create_func)
         thread->pre_create_func(thread);
-    platform_thread_create(&thread->thread_id, (thread_func_t)app_thread, thread);
+    platform_thread_create(&thread->thread_id, (ThreadFunc_T)app_thread, thread);
     if (thread->post_create_func)
         thread->post_create_func(thread);
 }
@@ -36,38 +40,154 @@ const char* get_thread_label() {
     return thread_label;
 }
 
-void start_threads(app_thread_args_t *threads, int num_threads) {
-    // // Initialize the logger semaphore
-    // sem_init(&logger_semaphore, 0, 0);
+#define LOG_ITERATIONS 10000
 
-    for (int i = 0; i < num_threads; i++) {
-        create_app_thread(&threads[i]);
+void* generic_thread_function(void* arg) {
+    AppThreadArgs_T* thread_info = (AppThreadArgs_T*)arg;
+    set_thread_label(thread_info->label);
+    long count = 0;
+    logger_log(LOG_INFO, "Thread %s started msg:%d", get_thread_label(), count++);
+    for (int i = 0; i < LOG_ITERATIONS; i++) {
+        for (int j = 0; j < LOG_FATAL; j++) { // Assuming LOG_FATAL is the highest log level
+            LogLevel level = (LogLevel)(j % (LOG_FATAL + 1));
+            logger_log(level, "%s logging %s msg:%d", get_thread_label(), log_level_to_string(level), count++);
+            platform_sleep(5); // Simulate some work
+        }
+    }
+    logger_log(LOG_INFO, "Thread %s completed msg:%d", get_thread_label(), count++);
+    return NULL;
+}
+
+void* client_thread_function(void* arg) {
+    AppThreadArgs_T* thread_info = (AppThreadArgs_T*)arg;
+    set_thread_label(thread_info->label);
+    logger_log(LOG_INFO, "Client thread [%s] started", get_thread_label());
+    // Client-specific functionality here
+    return NULL;
+}
+
+void* server_thread_function(void* arg) {
+    AppThreadArgs_T* thread_info = (AppThreadArgs_T*)arg;
+    set_thread_label(thread_info->label);
+    logger_log(LOG_INFO, "Server thread [%s] started", get_thread_label());
+    // Server-specific functionality here
+    return NULL;
+}
+
+void* logger_thread_function(void* arg) {
+    AppThreadArgs_T* thread_info = (AppThreadArgs_T*)arg;
+    set_thread_label(thread_info->label);
+    logger_log(LOG_INFO, "Logger thread started");
+    // Signal that the logger thread is ready
+    platform_mutex_lock(&logger_mutex);
+    logger_ready = 1;
+    platform_cond_signal(&logger_cond);
+    platform_mutex_unlock(&logger_mutex);
+    // Logger-specific functionality here
+    return NULL;
+}
+
+// Stub functions
+void* pre_create_stub(void* arg ) {
+    (void) arg;
+    return 0;
+}
+
+void* post_create_stub(void* arg) {
+    (void) arg;
+    return 0;
+}
+
+void* init_stub(void* arg) {
+    (void) arg;
+    return 0; 
+}
+
+void* exit_stub(void* arg) {
+    (void) arg;
+    return 0;
+}
+
+AppThreadArgs_T all_threads[] = {
+    {
+        .label = "LOGGER",
+        .func = logger_thread_function,
+        .data = NULL,
+        .pre_create_func = pre_create_stub,
+        .post_create_func = post_create_stub,
+        .init_func = init_stub,
+        .exit_func = exit_stub
+    },
+    {
+        .label = "CLIENT",
+        .func = client_thread_function,
+        .data = NULL,
+        .pre_create_func = pre_create_stub,
+        .post_create_func = post_create_stub,
+        .init_func = init_stub,
+        .exit_func = exit_stub
+    },
+    {
+        .label = "SERVER",
+        .func = server_thread_function,
+        .data = NULL,
+        .pre_create_func = pre_create_stub,
+        .post_create_func = post_create_stub,
+        .init_func = init_stub,
+        .exit_func = exit_stub
+    },
+    {
+        .label = "GENERIC-1",
+        .func = generic_thread_function,
+        .data = NULL,
+        .pre_create_func = pre_create_stub,
+        .post_create_func = post_create_stub,
+        .init_func = init_stub,
+        .exit_func = exit_stub
+    },
+    {
+        .label = "GENERIC-2",
+        .func = generic_thread_function,
+        .data = NULL,
+        .pre_create_func = pre_create_stub,
+        .post_create_func = post_create_stub,
+        .init_func = init_stub,
+        .exit_func = exit_stub
+    },
+    {
+        .label = "GENERIC-3",
+        .func = generic_thread_function,
+        .data = NULL,
+        .pre_create_func = pre_create_stub,
+        .post_create_func = post_create_stub,
+        .init_func = init_stub,
+        .exit_func = exit_stub
+    }
+};
+
+void init_thread() {
+    // Wait for the logger thread to signal that it is ready
+    platform_mutex_lock(&logger_mutex);
+    while (!logger_ready) {
+        platform_cond_wait(&logger_cond, &logger_mutex);
+    }
+    platform_mutex_unlock(&logger_mutex);
+
+    // Thread-specific initialization code
+    // ...
+}
+
+void start_threads() {
+    // Initialize the logger condition and mutex
+    platform_cond_init(&logger_cond);
+    platform_mutex_init(&logger_mutex);
+
+    // Start the logger thread first
+    create_app_thread(&all_threads[0]);
+
+    int num_threads = sizeof(all_threads) / sizeof(all_threads[0]);
+
+    for (int i = 1; i < num_threads; i++) {
+        create_app_thread(&all_threads[i]);
     }
 }
-        // launch_thread_function, thread.func, 
-        
-        
-//         thread.arg, thread.name, thread.post_init_func);
-//     }
-
-//     platform_thread_t thread_handles
-
-//     for (int i = 0; i < num_threads; i++) {
-//         if (strcmp(threads[i].name, "log") == 0) {
-//             // Start the logger thread and wait for it to signal readiness
-//             platform_thread_create(&thread_handles[i], prelaunch_thread_function, threads[i].func, threads[i].name);
-//             sem_wait(&logger_semaphore);
-//         } else {
-//             // Start other threads
-//             platform_thread_create(&thread_handles[i], prelaunch_thread_function, threads[i].func, threads[i].name);
-//         }
-//     }
-
-//     // Wait for all threads to finish
-//     for (int i = 0; i < num_threads; i++) {
-//         platform_thread_join(thread_handles[i], NULL);
-//     }
-
-//     // Destroy the logger semaphore
-//     sem_destroy(&logger_semaphore);
-// }

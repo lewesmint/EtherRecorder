@@ -30,11 +30,11 @@ void get_current_time(char *buffer, size_t buffer_size) {
     strftime(buffer, buffer_size, "%Y-%m-%d %H:%M:%S", t);
 }
 
-void lock_mutex(platform_mutex_t *mutex) {
+void lock_mutex(PlatformMutex_T *mutex) {
     platform_mutex_lock(mutex);
 }
 
-void unlock_mutex(platform_mutex_t *mutex) {
+void unlock_mutex(PlatformMutex_T *mutex) {
     platform_mutex_unlock(mutex);
 }
 

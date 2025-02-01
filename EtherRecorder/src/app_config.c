@@ -1,7 +1,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include "config.h"
+#include "app_config.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,6 +9,7 @@
 #include <ctype.h>
 #include <limits.h>
 
+#include "logger.h"
 #include "platform_utils.h"
 
 #define MAX_LINE_LENGTH 256
@@ -43,11 +44,20 @@ static void trim_whitespace(char *str) {
 /**
  * @copydoc load_config
  */
-int load_config(const char *filename) {
-    FILE *file = fopen(filename, "r");
+bool load_config(const char *filename, char* log_result) {
+   char full_path[PATH_MAX];
+    if (realpath(filename, full_path) == NULL) {
+        snprintf(log_result, LOG_MSG_BUFFER_SIZE, "Failed to resolve full path for: %s\n", filename);
+        return false; 
+    }
+    FILE *file = fopen(full_path, "r");
     if (!file) {
-        stream_print(stderr, "Failed to load configuration file: %s\n Default settings will be used\n", filename);
-        return 1; // Return 1 to indicate using default settings, we don't fail if the file is not found
+        snprintf(log_result, LOG_MSG_BUFFER_SIZE,
+                 "Failed to load configuration file: %s\n"
+                 "Default settings will be used\n", full_path);
+        return false;
+    } else {
+        snprintf(log_result, LOG_MSG_BUFFER_SIZE, "Loading configuration file: %s\n", full_path);
     }
 
     char line[MAX_LINE_LENGTH];
@@ -88,7 +98,7 @@ int load_config(const char *filename) {
     }
 
     fclose(file);
-    return 1; // Return 1 to indicate success
+    return true; // Return 1 to indicate success
 }
 
 /**
@@ -114,10 +124,10 @@ int get_config_int(const char *section, const char *key, int default_value) {
 /**
  * @copydoc get_config_bool
  */
-int get_config_bool(const char *section, const char *key, int default_value) {
+bool get_config_bool(const char *section, const char *key, bool default_value) {
     const char *value = get_config_string(section, key, NULL);
     if (!value) return default_value;
-    return (strcasecmp(value, "true") == 0 || strcmp(value, "1") == 0);
+    return (strcasecmp(value, "true") == false || strcmp(value, "1") == true);
 }
 
 /**

@@ -1,5 +1,5 @@
-#ifndef CONFIG_H
-#define CONFIG_H
+#ifndef APP_CONFIG_H
+#define APP_CONFIG_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -17,9 +17,10 @@ extern "C" {
  * @brief Loads the configuration from a file.
  *
  * @param filename The name of the configuration file.
+ * @param log_result The result of the configuration load.
  * @return true if the configuration was loaded successfully, false otherwise.
  */
-int load_config(const char *filename);
+bool load_config(const char *filename, char* log_result);
 
 /**
  * @brief Retrieves a string value from the configuration.
@@ -80,4 +81,4 @@ void free_config();
 }
 #endif
 
-#endif // CONFIG_H
+#endif // APP_CCONFIG_H

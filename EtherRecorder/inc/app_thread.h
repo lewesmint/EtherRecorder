@@ -4,23 +4,28 @@
 #include "platform_threads.h"
 #include "logger.h"
 
-typedef void* (*pre_create_func_t)(void* arg);
-typedef void* (*post_create_func_t)(void* arg);
-typedef void* (*init_func)(void* arg);
-typedef void* (*exit_func)(void* arg);
+typedef void* (*PreCreateFunc_T)(void* arg);
+typedef void* (*PostCreateFunc_T)(void* arg);
+typedef void* (*InitFunc_T)(void* arg);
+typedef void* (*ExitFunc_T)(void* arg);
 
 
-typedef struct _app_thread_args_t {
-    const char *label;                   // e.g., "CLIENT" or "SERVER"
-    thread_func_t func;                  // Actual function to execute
-    platform_thread_t thread_id;         // Thread ID
-    void *data;                          // Thread-specific data
-    pre_create_func_t pre_create_func;   // Pre-create function
-    post_create_func_t post_create_func; // Post-create function
-    pre_create_func_t init_func;         // 
-    post_create_func_t exit_func;        // 
-} app_thread_args_t;
+typedef struct AppThreadArgs_T {
+    const char *label;                  // e.g., "CLIENT" or "SERVER"
+    ThreadFunc_T func;                  // Actual function to execute
+    PlatformThread_T thread_id;         // Thread ID
+    void *data;                         // Thread-specific data
+    PreCreateFunc_T pre_create_func;    // Pre-create function
+    PostCreateFunc_T post_create_func;  // Post-create function
+    InitFunc_T init_func;               // Initialization function
+    ExitFunc_T exit_func;               // Exit function
+} AppThreadArgs_T;
 
+// // Define number of threads
+// #define NUM_THREADS 6
+
+// Declare the array (extern means it's defined in another source file)
+extern AppThreadArgs_T all_threads[];
 
 // /**
 //  * @brief Template for post-initialization functions.
@@ -65,15 +70,14 @@ typedef struct _app_thread_args_t {
 /**
  * @brief Starts the threads based on the thread table.
  * @param threads The thread table.
- * @param num_threads The number of threads in the table.
  */
-void start_threads(app_thread_args_t *threads, int num_threads);
+void start_threads();
 
-/**
- * @brief Sets the label of the current thread.
- * @param label The label of the thread.
- */
-void set_thread_label(const char *label);
+// /**
+//  * @brief Sets the label of the current thread.
+//  * @param label The label of the thread.
+//  */
+// void set_thread_label(const char *label);
 
 const char* get_thread_label();
 

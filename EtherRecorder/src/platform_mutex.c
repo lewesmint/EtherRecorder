@@ -5,7 +5,7 @@
 /**
  * @copydoc platform_mutex_init
  */
-int platform_mutex_init(platform_mutex_t *mutex) {
+int platform_mutex_init(PlatformMutex_T *mutex) {
     *mutex = CreateMutex(NULL, FALSE, NULL);
     return (*mutex == NULL) ? -1 : 0;
 }
@@ -13,22 +13,53 @@ int platform_mutex_init(platform_mutex_t *mutex) {
 /**
  * @copydoc platform_mutex_lock
  */
-int platform_mutex_lock(platform_mutex_t *mutex) {
+int platform_mutex_lock(PlatformMutex_T *mutex) {
     return (WaitForSingleObject(*mutex, INFINITE) == WAIT_OBJECT_0) ? 0 : -1;
 }
 
 /**
  * @copydoc platform_mutex_unlock
  */
-int platform_mutex_unlock(platform_mutex_t *mutex) {
+int platform_mutex_unlock(PlatformMutex_T *mutex) {
     return (ReleaseMutex(*mutex) != 0) ? 0 : -1;
 }
 
 /**
  * @copydoc platform_mutex_destroy
  */
-int platform_mutex_destroy(platform_mutex_t *mutex) {
+int platform_mutex_destroy(PlatformMutex_T *mutex) {
     return (CloseHandle(*mutex) != 0) ? 0 : -1;
+}
+
+/**
+ * @copydoc platform_cond_init
+ */
+int platform_cond_init(PlatformCond_T *cond) {
+    InitializeConditionVariable(cond);
+    return 0;
+}
+
+/**
+ * @copydoc platform_cond_wait
+ */
+int platform_cond_wait(PlatformCond_T *cond, PlatformMutex_T *mutex) {
+    return (SleepConditionVariableCS(cond, mutex, INFINITE) != 0) ? 0 : -1;
+}
+
+/**
+ * @copydoc platform_cond_signal
+ */
+int platform_cond_signal(PlatformCond_T *cond) {
+    WakeConditionVariable(cond);
+    return 0;
+}
+
+/**
+ * @copydoc platform_cond_destroy
+ */
+int platform_cond_destroy(PlatformCond_T *cond) {
+    // No explicit destroy function for CONDITION_VARIABLE in Windows
+    return 0;
 }
 
 #else
@@ -36,29 +67,57 @@ int platform_mutex_destroy(platform_mutex_t *mutex) {
 /**
  * @copydoc platform_mutex_init
  */
-int platform_mutex_init(platform_mutex_t *mutex) {
+int platform_mutex_init(PlatformMutex_T *mutex) {
     return pthread_mutex_init(mutex, NULL);
 }
 
 /**
  * @copydoc platform_mutex_lock
  */
-int platform_mutex_lock(platform_mutex_t *mutex) {
+int platform_mutex_lock(PlatformMutex_T *mutex) {
     return pthread_mutex_lock(mutex);
 }
 
 /**
  * @copydoc platform_mutex_unlock
  */
-int platform_mutex_unlock(platform_mutex_t *mutex) {
+int platform_mutex_unlock(PlatformMutex_T *mutex) {
     return pthread_mutex_unlock(mutex);
 }
 
 /**
  * @copydoc platform_mutex_destroy
  */
-int platform_mutex_destroy(platform_mutex_t *mutex) {
+int platform_mutex_destroy(PlatformMutex_T *mutex) {
     return pthread_mutex_destroy(mutex);
+}
+
+/**
+ * @copydoc platform_cond_init
+ */
+int platform_cond_init(PlatformCond_T *cond) {
+    return pthread_cond_init(cond, NULL);
+}
+
+/**
+ * @copydoc platform_cond_wait
+ */
+int platform_cond_wait(PlatformCond_T *cond, PlatformMutex_T *mutex) {
+    return pthread_cond_wait(cond, mutex);
+}
+
+/**
+ * @copydoc platform_cond_signal
+ */
+int platform_cond_signal(PlatformCond_T *cond) {
+    return pthread_cond_signal(cond);
+}
+
+/**
+ * @copydoc platform_cond_destroy
+ */
+int platform_cond_destroy(PlatformCond_T *cond) {
+    return pthread_cond_destroy(cond);
 }
 
 #endif

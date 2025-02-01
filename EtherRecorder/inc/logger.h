@@ -2,11 +2,14 @@
 #define LOGGER_H
 
 #include <stdio.h>
+#include <stdbool.h>
 
 /**
  * @file logger.h
  * @brief Logger interface for logging messages to stderr and/or a file.
  */
+
+#define LOG_MSG_BUFFER_SIZE 1024 // Buffer size for log messages
 
 /**
  * @enum LogOutput
@@ -36,7 +39,7 @@ typedef enum {
 /**
  * @brief Initializes the logger.
  */
-int init_logger_from_config();
+bool init_logger_from_config(char *logger_init_result);
 
 // /**
 //  * @brief Sets a thread-specific log label (e.g., "CLIENT" or "SERVER").
