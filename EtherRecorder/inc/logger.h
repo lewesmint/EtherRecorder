@@ -38,6 +38,27 @@ typedef enum {
  */
 int init_logger_from_config();
 
+// /**
+//  * @brief Sets a thread-specific log label (e.g., "CLIENT" or "SERVER").
+//  *
+//  * @param thread_name The name of the thread.
+//  */
+// void set_log_thread_label(const char *thread_name);
+
+/**
+ * @brief Sets a thread-specific log file name.
+ *
+ * @param thread_name The name of the thread.
+ */
+void set_log_thread_file(const char *thread_name);
+
+/**
+ * @brief Sets a thread-specific log file from configuration.
+ *
+ * @param thread_name The name of the thread.
+ */
+void set_thread_log_file_from_config(const char *thread_name);
+
 /**
  * @brief Converts the log level to a string.
  *
@@ -49,21 +70,34 @@ const char* log_level_to_string(LogLevel level);
 /**
  * @brief Logs a message with the specified log level.
  *
- * @param level The log level of the message.
  * @param format The format string for the message.
  * @param ... The arguments for the format string.
  */
 void logger_log(LogLevel level, const char *format, ...);
 
+/**
+ * @brief Logs a message immediately to file and console.
+ *
+ * @param message The formatted log message.
+ */
+void log_immediately(const char *message);
 
-void logger_set_level(LogLevel level);
 
-void logger_set_output(LogOutput output);
+/**
+ * @brief Starts the logging thread.
+ */
+void start_logging_thread();
 
 /**
  * @brief Closes the logger and releases any resources.
  */
 void logger_close(void);
+
+/**
+ * @brief Initializes the logger for a specific thread.
+ * @param thread_name The name of the thread.
+ */
+void init_thread_logger(const char *thread_name);
 
 #ifdef __cplusplus
 }

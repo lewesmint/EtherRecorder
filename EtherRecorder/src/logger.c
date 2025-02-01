@@ -7,6 +7,9 @@
  */
 
 #include "logger.h"
+#include "platform_threads.h"
+#include "log_queue.h"
+#include <pthread.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,6 +22,7 @@
 #include <errno.h>
 
 #include "platform_utils.h"
+#include "app_thread.h"
 #include "config.h"
 
 #define LOG_BUFFER_SIZE 1024 // Buffer size for log messages
@@ -36,6 +40,31 @@ static char log_file_path[MAX_PATH] = "";              // Log file path
 static char log_file_name[MAX_PATH] = "log_file.txt";  // Log file name
 static off_t log_file_size = 10485760;                 // Log file size before rotation
 
+// Thread-specific log file
+THREAD_LOCAL static char thread_log_file[MAX_PATH] = "";
+
+static platform_thread_t log_thread; // Logging thread
+static int logging_thread_started = 0; // Flag to indicate if logging thread has started
+// static platform_thread_t main_thread_id; // Main thread ID
+
+static __thread const char* thread_label = NULL;
+
+// /**
+//  * @brief Sets the log label for the current thread.
+//  * @param label The log label to set.
+//  */
+// void set_log_thread_label(const char *label) {
+//     thread_log_label = label;
+// }
+
+/**
+ * @brief Sets the log file for the current thread.
+ * @param filename The log file name to set.
+ */
+void set_log_thread_file(const char *filename) {
+    strncpy(thread_log_file, filename, sizeof(thread_log_file) - 1);
+    thread_log_file[sizeof(thread_log_file) - 1] = '\0';
+}
 
 /**
  * @brief Generates a timestamped log filename.
@@ -49,10 +78,11 @@ static void generate_log_filename(char *buffer, size_t size) {
 }
 
 /**
- * @copydoc log_level_to_string
+ * @brief Converts log level to string.
+ * @param level The log level.
+ * @return The string representation of the log level.
  */
-const char* log_level_to_string(LogLevel level)
-{
+const char* log_level_to_string(LogLevel level) {
     switch (level) {
         case LOG_DEBUG: return "DEBUG";
         case LOG_INFO: return "INFO ";
@@ -79,8 +109,8 @@ static int open_log_file() {
     // Create the directories for the log file if they don't exist
     if (create_directories(directory_path) != 0) {
         if (directory_creation_failure_count < 5) {
-            // don't go one forever
-            stream_print(stderr, "Failed to create directory structure for logging%s\n", directory_path);
+            // don't go on forever
+            stream_print(stderr, "Failed to create directory structure for logging: %s\n", directory_path);
             directory_creation_failure_count++;
         }
     }
@@ -109,7 +139,6 @@ static int open_log_file() {
 
 /**
  * @brief Rotates the log file if it exceeds the configured size.
- * @copydoc rotate_log_file
  */
 static void rotate_log_file() {
     struct stat st;
@@ -143,12 +172,80 @@ static void format_log_message(char *buffer, size_t buffer_size, LogLevel level,
     char message_buffer[LOG_BUFFER_SIZE];
     vsnprintf(message_buffer, sizeof(message_buffer), format, args);
 
-    snprintf(buffer, buffer_size, "%010llu %s %s: %s", log_index++, time_str, log_level_to_string(level), message_buffer);
+    if (get_thread_label()) {
+        snprintf(buffer, buffer_size, "%010llu %s %s [%s]: %s", log_index++, time_str, log_level_to_string(level), get_thread_label(), message_buffer);
+    } else {
+        snprintf(buffer, buffer_size, "%010llu %s %s: %s", log_index++, time_str, log_level_to_string(level), message_buffer);
+    }
+}
+
+/**
+ * @brief Logs a message immediately to file and console.
+ * @param level The log level of the message.
+ * @param message The formatted log message.
+ */
+void log_immediately(const char *message) {
+    lock_mutex(&log_mutex);
+
+    LogOutput prior_log_output = log_output;
+
+    rotate_log_file(); // Check and rotate log file if necessary
+
+    if (log_fp == NULL) {
+        if (open_log_file() != 0) {
+            // if the log file cannot be opened, log to stderr only
+            log_output = LOG_OUTPUT_STDERR;
+        }
+    }
+
+    if (log_output == LOG_OUTPUT_FILE || log_output == LOG_OUTPUT_BOTH) {
+        fputs(message, log_fp);
+        fputs("\n", log_fp);
+        fflush(log_fp);
+    }
+    if (log_output == LOG_OUTPUT_STDERR || log_output == LOG_OUTPUT_BOTH) {
+        fputs(message, stderr);
+        fputs("\n", stderr);
+    }
+
+    log_output = prior_log_output;
+
+    unlock_mutex(&log_mutex);
+}
+
+/**
+ * @brief Logs a message with the specified log level and format.
+ * @param level The log level of the message.
+ * @param format The format string (like printf).
+ */
+void logger_log(LogLevel level, const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+
+    // Retrieve the thread name from the thread-local variable
+    const char *name = thread_label ? thread_label : "unknown";
+
+    // Format the log message to include the thread name
+    char log_message[256];
+    snprintf(log_message, sizeof(log_message), "[%s] %s", name, format);
+
+    char log_buffer[LOG_BUFFER_SIZE];
+    format_log_message(log_buffer, sizeof(log_buffer), level, log_message, args);
+    va_end(args);
+
+    // if (logging_thread_started && !platform_thread_equal(platform_thread_self(), main_thread_id)) {
+    if (logging_thread_started) {
+        // Push the log message to the queue
+        log_queue_push(&log_queue, level, log_buffer);
+    } else {
+        // Log directly to file and console
+        log_immediately(log_buffer);
+    }
 }
 
 /**
  * @brief Initializes the logger with the configured log file path, name, and size.
- * @copydoc init_logger_from_config
+ * @return 1 on success, 0 on failure.
  */
 int init_logger_from_config() {
     platform_mutex_init(&log_mutex);
@@ -178,73 +275,79 @@ int init_logger_from_config() {
 
     log_file_size = get_config_int("logger", "log_file_size", log_file_size);
 
+    // Initialize log queue
+    log_queue_init(&log_queue);
+
+    // // Store the main thread ID
+    // main_thread_id = platform_thread_self();
+
     unlock_mutex(&log_mutex);
     return 1;
 }
 
 /**
- * @copydoc logger_set_level
+ * @brief Sets the log file for the current thread based on the config.
+ * @param thread_name The name of the thread.
  */
-void logger_set_level(LogLevel level)
-{
+void set_thread_log_file_from_config(const char *thread_name) {
+    char config_key[MAX_PATH];
+    snprintf(config_key, sizeof(config_key), "%s.log_file", thread_name);
+    const char* config_thread_log_file = get_config_string("logger", config_key, NULL);
+    if (config_thread_log_file) {
+        set_log_thread_file(config_thread_log_file);
+    }
+}
+
+/**
+ * @brief Initializes the logger for a specific thread.
+ * @param thread_name The name of the thread.
+ */
+void init_thread_logger(const char *thread_name) {
+    // set_log_thread_label(thread_name);
+    set_thread_log_file_from_config(thread_name);
+}
+
+// /**
+//  * @brief Starts the logging thread.
+//  */
+// void start_logging_thread() {
+//     lock_mutex(&log_mutex);
+//     if (!logging_thread_started) {
+//         platform_thread_create(&log_thread, log_thread_function, NULL);
+//         logging_thread_started = 1;
+//     }
+//     unlock_mutex(&log_mutex);
+// }
+
+/**
+ * @brief Sets the log level.
+ * @param level The log level to set.
+ */
+void logger_set_level(LogLevel level) {
     log_level = level;
 }
 
 /**
- * @copydoc logger_set_output
+ * @brief Sets the log output destination.
+ * @param output The log output destination to set.
  */
-void logger_set_output(LogOutput output)
-{
+void logger_set_output(LogOutput output) {
     log_output = output;
 }
 
 /**
- * @copydoc logger_log
+ * @brief Closes the logger and releases resources.
  */
-void logger_log(LogLevel level, const char *format, ...) {
-    lock_mutex(&log_mutex);
-
-    LogOutput prior_log_output = log_output;
-
-    rotate_log_file(); // Check and rotate log file if necessary
-
-    if (log_fp == NULL) {
-        if (open_log_file() != 0) {
-            // if the log file cannot be opened, log to stderr only
-            log_output = LOG_OUTPUT_STDERR;
-        }
-    }
-
-    char log_buffer[LOG_BUFFER_SIZE];
-    va_list args;
-    va_start(args, format);
-    format_log_message(log_buffer, sizeof(log_buffer), level, format, args);
-    va_end(args);
-
-    if (log_output == LOG_OUTPUT_FILE || log_output == LOG_OUTPUT_BOTH) {
-        fputs(log_buffer, log_fp);
-        fputs("\n", log_fp);
-        fflush(log_fp);
-    }
-    if (log_output == LOG_OUTPUT_STDERR || log_output == LOG_OUTPUT_BOTH) {
-        fputs(log_buffer, stderr);
-        fputs("\n", stderr);
-    }
-
-    log_output = prior_log_output;
-
-    unlock_mutex(&log_mutex);
-}
-
-/**
- * @copydoc logger_close
- */
-void logger_close()
-{
+void logger_close() {
     lock_mutex(&log_mutex);
     if (log_fp) {
         fclose(log_fp);
         log_fp = NULL;
     }
     unlock_mutex(&log_mutex);
+
+    if (logging_thread_started) {
+        // Wait for logging thread to finish (it won't, so this is just for completeness)
+        platform_thread_join(log_thread, NULL);
+    }
 }
