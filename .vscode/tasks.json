@@ -4,8 +4,8 @@
         {
             "label": "Clean",
             "type": "shell",
-            "command": "make",
-            "args": ["clean"],
+            "command": "nmake",
+            "args": ["/f", "MakeWin.mak", "clean"],
             "group": "build",
             "problemMatcher": [],
             "detail": "Clean the project using the Makefile",
@@ -20,12 +20,12 @@
             "label": "Build Debug",
             "type": "shell",
             "command": "make",
-            "args": ["debug"],
+            "args": ["-f", "MakeWin.mak", "debug"],
             "group": {
                 "kind": "build",
                 "isDefault": true
             },
-            "problemMatcher": ["$gcc"],
+            "problemMatcher": ["$msCompile"],
             "detail": "Build the project in debug mode using the Makefile",
             "presentation": {
                 "reveal": "always",
@@ -38,12 +38,12 @@
             "label": "Build Release",
             "type": "shell",
             "command": "make",
-            "args": ["release"],
+            "args": ["-f", "MakeWin.mak", "release"],
             "group": {
                 "kind": "build",
                 "isDefault": false
             },
-            "problemMatcher": ["$gcc"],
+            "problemMatcher": ["$msCompile"],
             "detail": "Build the project in release mode using the Makefile",
             "presentation": {
                 "reveal": "always",
@@ -55,13 +55,13 @@
         {
             "label": "Clean and Build Debug",
             "type": "shell",
-            "command": "sh",
-            "args": ["-c", "make clean && make debug"],
+            "command": "cmd",
+            "args": ["/c", "nmake /f MakeWin.mak clean && nmake /f MakeWin.mak debug"],
             "group": {
                 "kind": "build",
                 "isDefault": true
             },
-            "problemMatcher": ["$gcc"],
+            "problemMatcher": ["$msCompile"],
             "detail": "Clean the project and then build in debug mode using the Makefile",
             "presentation": {
                 "reveal": "always",

@@ -1,8 +1,7 @@
 #ifndef LOG_QUEUE_H
 #define LOG_QUEUE_H
 
-#include <stdatomic.h>
-#include <stddef.h>
+typedef int placeholder_size_T;
 
 #include "logger.h"
 
@@ -22,8 +21,8 @@ typedef struct LogEntry_T {
  * @brief Structure representing a log queue.
  */
 typedef struct LogQueue_T {
-    atomic_size_t head;
-    atomic_size_t tail;
+    long head;
+    long tail;
     LogEntry_T entries[LOG_QUEUE_SIZE];
 } LogQueue_T;
 
@@ -35,14 +34,16 @@ extern LogQueue_T log_queue; // Declare the log queue
  */
 void log_queue_init(LogQueue_T *queue);
 
-/**
- * @brief Pushes a log entry onto the log queue.
- * @param queue The log queue.
- * @param level The log level of the message.
- * @param message The log message.
- * @return 0 on success, -1 if the queue is full.
- */
-int log_queue_push(LogQueue_T *queue, LogLevel level, const char *message);
+// /**
+//  * @brief Pushes a log entry onto the log queue.
+//  * @param queue The log queue.
+//  * @param level The log level of the message.
+//  * @param message The log message.
+//  * @return 0 on success, -1 if the queue is full.
+//  */
+// bool log_queue_push(LogQueue_T *queue, const LogEntry_T *entry) {
+// bool log_queue_push(LogQueue_T *queue, LogLevel level, const char *message);
+void log_queue_push(LogQueue_T *log_queue, LogLevel level, const char *log_buffer);
 
 /**
  * @brief Pops a log entry from the log queue.
@@ -51,12 +52,5 @@ int log_queue_push(LogQueue_T *queue, LogLevel level, const char *message);
  * @return 0 on success, -1 if the queue is empty.
  */
 int log_queue_pop(LogQueue_T *queue, LogEntry_T *entry);
-
-// /**
-//  * @brief Log thread function implementation.
-//  * @param arg The argument passed to the thread function.
-//  * @return The return value of the thread function.
-//  */
-// void* log_thread_function_impl(void* arg);
 
 #endif // LOG_QUEUE_H

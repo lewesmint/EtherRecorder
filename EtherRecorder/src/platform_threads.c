@@ -2,7 +2,7 @@
 
 #ifdef _WIN32
 typedef struct ThreadWrapper_T{
-    thread_func_t func;
+    ThreadFunc_T func;
     void *arg;
 } ThreadWrapper_T;
 

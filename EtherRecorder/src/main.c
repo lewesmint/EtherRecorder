@@ -13,7 +13,7 @@ static AppError init_app() {
     char config_load_result[LOG_MSG_BUFFER_SIZE];
     char logger_init_result[LOG_MSG_BUFFER_SIZE];
 
-    init_console();
+//    init_console();
     // Load configuration, if config not found use defaults
     // This will only return false if the defaults cannot be set
     // for some reason.
@@ -67,6 +67,12 @@ int main(int argc, char *argv[]) {
     // utilise a log message queue, for asynchronus operation, to avoid threads 
     // blocking on logging.
     start_threads();
+
+    // Wait for 100 seconds
+    platform_sleep(10000); // platform_sleep takes milliseconds
+
+    // Request logger shutdown
+    request_shutdown();
 
     return app_exit();
 }

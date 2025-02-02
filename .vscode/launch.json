@@ -3,14 +3,13 @@
     "configurations": [
         {
             "name": "Launch",
-            "type": "lldb",
+            "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/MacArm64/Debug/EtherRecorder",
-            "args": [
-            ],
+            "program": "${workspaceFolder}/ARM64/Debug/EtherRecorder.exe",
+            "args": [],
             "cwd": "${workspaceFolder}",
             "preLaunchTask": "Build Debug",
-            "terminal": "integrated",
+            "console": "integratedTerminal"
         }
     ]
 }

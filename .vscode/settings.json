@@ -1,8 +1,12 @@
 {
-    "files.associations": {
-        "logger.h": "c",
-        "platform_utils.h": "c",
-        "platform_threads.h": "c",
-        "string.h": "c"
-    }
+    "terminal.integrated.defaultProfile.windows": "Command Prompt",
+    "makefile.buildLog": "build_log",
+    "makefile.makefilePath": "MakeWin.mak",
+    "makefile.launchConfigurations": [
+        {
+            "cwd": "c:\\code\\c_code\\EtherRecorder\\Win32\\Debug",
+            "binaryPath": "c:\\code\\c_code\\EtherRecorder\\Win32\\Debug\\EtherRecorder.exe",
+            "binaryArgs": []
+        }
+    ]
 }

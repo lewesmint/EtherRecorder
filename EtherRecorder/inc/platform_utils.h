@@ -6,93 +6,129 @@
 #include <time.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
+
 #include "platform_mutex.h"
 
 #ifdef _WIN32
-#include <windows.h>
-#include <direct.h>
-#include <windows.h>
-#include <shlwapi.h>
-// Link with Shlwapi.lib for _mkdir
-#pragma comment(lib, "shlwapi.lib")
-#else // !_WIN32
-#include <libgen.h>
-#include <limits.h>
-#include <sys/stat.h>
-#include <errno.h>
-#endif // _WIN32
-
-#ifdef _WIN32
-#define PATH_SEPARATOR '\\' // Windows path separator
-#define platform_mkdir(path) _mkdir(path)
+#include <Windows.h>
 #ifndef PATH_MAX
 #define PATH_MAX MAX_PATH
 #endif // PATH_MAX
 #else // !_WIN32
-#define PATH_SEPARATOR '/'
-#define platform_mkdir(path) mkdir(path, 0755)
 #ifndef MAX_PATH
 #define MAX_PATH PATH_MAX
 #endif // MAX_PATH
 #endif // _WIN32
 
+/*
+ * Extern declaration of a platform–specific path separator.
+ * The definition will be in platform_utils.c, where we handle _WIN32.
+ */
+extern const char PATH_SEPARATOR;
+
+// /**
+// * @brief Maximum file path length.
+// *
+// */
+//#define PLATFORM_PATH_MAX  (\
+//    (defined(_WIN32) ? MAX_PATH : PATH_MAX) \
+//)
+
+/**
+ * @brief Converts a string to an unsigned 64-bit integer.
+ * @param str The null-terminated string to convert.
+ * @param endptr If non-null, receives the address of the first invalid character.
+ * @param base The numeric base to interpret (e.g. 10).
+ * @return The converted value, or 0 on failure.
+ */
 uint64_t platform_strtoull(const char* str, char** endptr, int base);
 
-// Function to get the current time as a formatted string
-void get_current_time(char *buffer, size_t buffer_size);
+/**
+ * @brief Gets the current time as a formatted string (YYYY-mm-dd HH:MM:SS).
+ * @param buffer Pointer to the buffer where the formatted string is placed.
+ * @param buffer_size Size of @p buffer.
+ */
+void get_current_time(char* buffer, size_t buffer_size);
 
-void init_mutex(PlatformMutex_T *mutex);
+/**
+ * @brief Initialises a mutex.
+ * @param mutex Pointer to the mutex structure.
+ */
+void init_mutex(PlatformMutex_T* mutex);
 
 /**
  * @brief Locks a mutex.
- * @param mutex Pointer to the mutex to lock.
+ * @param mutex Pointer to the mutex structure.
  */
-void lock_mutex(PlatformMutex_T *mutex);
+void lock_mutex(PlatformMutex_T* mutex);
 
 /**
  * @brief Unlocks a mutex.
- * @param mutex Pointer to the mutex to unlock.
+ * @param mutex Pointer to the mutex structure.
  */
-void unlock_mutex(PlatformMutex_T *mutex);
+void unlock_mutex(PlatformMutex_T* mutex);
 
 /**
- * @brief Prints a formatted string to a stream.
- * @param stream The stream to print to.
+ * @brief Prints a formatted string to a given stream.
+ * @param stream Output stream.
  * @param format The format string.
  * @param ... Additional arguments for the format string.
  */
-void stream_print(FILE *stream, const char *format, ...);
+void stream_print(FILE* stream, const char* format, ...);
 
 /**
  * @brief Sleeps for a specified number of milliseconds.
- * @param milliseconds The number of milliseconds to sleep.
+ * @param milliseconds Number of milliseconds to sleep.
  */
 void platform_sleep(unsigned int milliseconds);
 
 /**
- * @brief Sanitizes a file path.
- * @param path The path to sanitize.
+ * @brief Sanitises a file path by trimming spaces, removing trailing slashes
+ *        and converting path separators to the platform default.
+ * @param path The path to sanitise.
  */
-void sanitise_path(char *path);
+void sanitise_path(char* path);
 
 /**
- * @brief Strips the directory path from a full file path.
- * @param full_file_path The full file path.
- * @param directory_path The buffer to store the directory path.
- * @param size The size of the buffer.
+ * @brief Extracts the directory portion of a file path.
+ * @param full_file_path The full path to examine.
+ * @param directory_path Buffer to receive the directory portion.
+ * @param size The size of the @p directory_path buffer.
  */
-void strip_directory_path(const char *full_file_path, char *directory_path, size_t size);
+void strip_directory_path(const char* full_file_path, char* directory_path, size_t size);
 
 /**
- * @brief Creates directories for the given path if they don't exist.
- * @param path The path for which to create directories.
+ * @brief Recursively creates directories for the given path.
+ * @param path The directory path to create.
  * @return 0 on success, -1 on failure.
  */
-int create_directories(const char *path);
+int create_directories(const char* path);
 
 /**
- * @brief Initializes the console.
+ * @brief Initialises the console (e.g. disables Quick Edit mode on Windows).
  */
 void init_console();
+
+/**
+ * @brief Resolves the absolute (full) path of a given file/directory.
+ * @param filename The file or directory name to resolve.
+ * @param full_path Buffer to hold the resulting absolute path.
+ * @param size The size of @p full_path.
+ * @return true on success, false on failure.
+ */
+bool resolve_full_path(const char* filename, char* full_path, size_t size);
+
+
+/**
+ * @brief Provides a case-insensitive string comparison.
+ * A cross-platform equivalent of `strcasecmp()`, implemented in `platform_utils.c`.
+ * @param s1 First string.
+ * @param s2 Second string.
+ * @return 0 if the strings are equal (ignoring case), a negative value if s1 < s2, 
+ *         and a positive value if s1 > s2.
+ */
+int platform_strcasecmp(const char *s1, const char *s2);
 
 #endif // PLATFORM_UTILS_H

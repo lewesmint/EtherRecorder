@@ -9,7 +9,6 @@
 #include "logger.h"
 #include "platform_threads.h"
 #include "log_queue.h"
-#include <pthread.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,7 +30,7 @@ static FILE *log_fp = NULL; // Log file pointer
 static LogLevel log_level = LOG_DEBUG; // Current log level
 static LogOutput log_output = LOG_OUTPUT_BOTH; // Log output destination
 static PlatformMutex_T logging_mutex; // Mutex for thread safety
-static char log_file_full_name[PATH_MAX]; // Log file name' with path
+static char log_file_full_name[MAX_PATH]; // Log file name' with path
 static unsigned long long log_index = 0; // Log message index
 
 // defaults if not read from the config file

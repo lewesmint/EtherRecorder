@@ -2,15 +2,16 @@
 #define CONFIG_H
 
 #include "app_config.h"
+#include "platform_utils.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 #include <ctype.h>
 #include <limits.h>
 
 #include "logger.h"
-#include "platform_utils.h"
 
 #define MAX_LINE_LENGTH 256
 #define MAX_SECTION_LENGTH 50
@@ -45,8 +46,8 @@ static void trim_whitespace(char *str) {
  * @copydoc load_config
  */
 bool load_config(const char *filename, char* log_result) {
-   char full_path[PATH_MAX];
-    if (realpath(filename, full_path) == NULL) {
+    char full_path[MAX_PATH];
+    if (!resolve_full_path(filename, full_path, sizeof(full_path))) {
         snprintf(log_result, LOG_MSG_BUFFER_SIZE, "Failed to resolve full path for: %s\n", filename);
         return false; 
     }
@@ -127,7 +128,7 @@ int get_config_int(const char *section, const char *key, int default_value) {
 bool get_config_bool(const char *section, const char *key, bool default_value) {
     const char *value = get_config_string(section, key, NULL);
     if (!value) return default_value;
-    return (strcasecmp(value, "true") == false || strcmp(value, "1") == true);
+    return (platform_strcasecmp(value, "true") == false || strcmp(value, "1") == true);
 }
 
 /**

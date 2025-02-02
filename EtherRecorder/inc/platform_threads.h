@@ -3,16 +3,8 @@
 
 #ifdef _WIN32
 #include <windows.h>
-typedef HANDLE platform_thread_t;
-#else
-#include <pthread.h>
-typedef pthread_t PlatformThread_T;
-#endif
-
-#ifdef _WIN32
-#include <windows.h>
 #define THREAD_LOCAL __declspec(thread)
-typedef HANDLE platform_thread_t;
+typedef HANDLE PlatformThread_T;
 #else
 #include <pthread.h>
 #define THREAD_LOCAL __thread
