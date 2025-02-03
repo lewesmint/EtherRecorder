@@ -41,9 +41,7 @@ void log_queue_init(LogQueue_T *queue);
 //  * @param message The log message.
 //  * @return 0 on success, -1 if the queue is full.
 //  */
-// bool log_queue_push(LogQueue_T *queue, const LogEntry_T *entry) {
-// bool log_queue_push(LogQueue_T *queue, LogLevel level, const char *message);
-void log_queue_push(LogQueue_T *log_queue, LogLevel level, const char *log_buffer);
+bool log_queue_push(LogQueue_T *log_queue, LogLevel level, const char *log_buffer);
 
 /**
  * @brief Pops a log entry from the log queue.
@@ -51,6 +49,8 @@ void log_queue_push(LogQueue_T *log_queue, LogLevel level, const char *log_buffe
  * @param entry The log entry to populate.
  * @return 0 on success, -1 if the queue is empty.
  */
-int log_queue_pop(LogQueue_T *queue, LogEntry_T *entry);
+bool log_queue_pop(LogQueue_T *queue, LogEntry_T *entry);
+
+bool log_queue_pop_debug(LogQueue_T *queue, LogEntry_T *entry);
 
 #endif // LOG_QUEUE_H

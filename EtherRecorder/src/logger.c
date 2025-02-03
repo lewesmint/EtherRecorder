@@ -25,34 +25,100 @@
 #include "app_config.h"
 
 #define MAX_LOG_FAILURES 100 // Maximum number of log failures before exiting
+#define MAX_THREADS 100
+#define APP_LOG_FILE_INDEX 0
 
-static FILE *log_fp = NULL; // Log file pointer
+#define CONFIG_LOG_PATH_KEY "log_file_path"
+#define CONFIG_LOG_FILE_KEY "log_file_name"
+
+typedef struct ThreadLogFile {
+    char thread_label[MAX_PATH];
+    FILE *log_fp;
+    char log_file_name[MAX_PATH];
+} ThreadLogFile;
+
+static ThreadLogFile thread_log_files[MAX_THREADS + 1]; // +1 for the main application log file
+static int thread_log_file_count = 0;
+
+// static PlatformMutex_T thread_log_files_mutex; // Mutex for protecting thread_log_files
+
 static LogLevel log_level = LOG_DEBUG; // Current log level
 static LogOutput log_output = LOG_OUTPUT_BOTH; // Log output destination
 static PlatformMutex_T logging_mutex; // Mutex for thread safety
-static char log_file_full_name[MAX_PATH]; // Log file name' with path
 static unsigned long long log_index = 0; // Log message index
 
 // defaults if not read from the config file
-static char log_file_path[MAX_PATH] = "";              // Log file path
-static char log_file_name[MAX_PATH] = "log_file.log";  // Log file name
-static off_t log_file_size = 10485760;                 // Log file size before rotation
+static char log_file_path[MAX_PATH] = "";             // Log file path
+static char log_file_name[MAX_PATH] = "log_file.log"; // Log file name
+static off_t log_file_size = 10485760;                // Log file size before rotation
 
 // Thread-specific log file
 THREAD_LOCAL static char thread_log_file[MAX_PATH] = "";
 
 static PlatformThread_T log_thread; // Logging thread
-static int logging_thread_started = 0; // Flag to indicate if logging thread has started
-// static platform_thread_t main_thread_id; // Main thread ID
+static bool logging_thread_started = false; // indicate whether the logger thread has started
+
 
 /**
- * @brief 
+ * @brief Constructs the full log file name.
+ * @param full_log_file_name The buffer to store the full log file name.
+ * @param size The size of the buffer.
+ * @param log_file_path The log file path.
+ * @param log_file_name The log file name.
+ */
+static void construct_log_file_name(char *full_log_file_name, size_t size, const char *log_file_path, const char *log_file_name) {
+    if (strlen(log_file_path) > 0) {
+        snprintf(full_log_file_name, size, "%s%c%s", log_file_path, PATH_SEPARATOR, log_file_name);
+    } else {
+        strncpy(full_log_file_name, log_file_name, size - 1);
+        full_log_file_name[size - 1] = '\0';
+    }
+    sanitise_path(full_log_file_name);
+}
+
+
+/**
  * @brief Sets the log file for the current thread.
  * @param filename The log file name to set.
  */
-void set_log_thread_file(const char *filename) {
-    strncpy(thread_log_file, filename, sizeof(thread_log_file) - 1);
-    thread_log_file[sizeof(thread_log_file) - 1] = '\0';
+void set_log_thread_file(const char *label, const char *filename) {
+    lock_mutex(&logging_mutex); // Lock the mutex
+
+    if (thread_log_file_count >= MAX_THREADS) {
+        // Maximum number of threads reached
+        unlock_mutex(&logging_mutex); // Unlock the mutex
+        return;
+    }
+
+    strncpy(thread_log_files[thread_log_file_count].thread_label, label, sizeof(thread_log_files[thread_log_file_count].thread_label) - 1);
+    strncpy(thread_log_files[thread_log_file_count].log_file_name, filename, sizeof(thread_log_files[thread_log_file_count].log_file_name) - 1);
+    // Don't open yet, leave it to the first log message in the context of the logger.
+    thread_log_files[thread_log_file_count].log_fp = NULL;    
+    thread_log_file_count++;
+
+    unlock_mutex(&logging_mutex); // Unlock the mutex
+}
+
+/**
+ * @brief Sets the log file for the current thread based on the config.
+ * @param thread_label The name of the thread.
+ */
+void set_thread_log_file_from_config(const char *thread_label) {
+    
+    char file_config_key[MAX_PATH];
+    snprintf(file_config_key, sizeof(file_config_key), "%s." CONFIG_LOG_FILE_KEY, thread_label);
+    const char* config_thread_log_file = get_config_string("logger", file_config_key, NULL);
+    const char* config_thread_log_path = get_config_string("logger", CONFIG_LOG_PATH_KEY, NULL);    
+
+    if (config_thread_log_file) {
+        if (config_thread_log_path) {
+            char full_log_file_name[MAX_PATH];
+            construct_log_file_name(full_log_file_name, sizeof(full_log_file_name), config_thread_log_path, config_thread_log_file);
+            set_log_thread_file(thread_label, full_log_file_name);
+        } else {
+            set_log_thread_file(thread_label, config_thread_log_file);
+        }
+    }
 }
 
 /**
@@ -84,16 +150,25 @@ const char* log_level_to_string(LogLevel level) {
 
 /**
  * @brief Opens the log file and manages the failure count.
- * @return 0 on success, -1 on failure.
+ * 
+ * @param log_file_full_name The full name of the log file.
+ * @return false if the log file could not be opened, true if it was opened successfully.
+ *         already open or opened successfully.
  */
-static int open_log_file() {
+// static bool open_log_file(const char* log_file_full_name) {
+static bool open_log_file_if_needed(ThreadLogFile *thread_log_file) {
+    if (thread_log_file->log_fp != NULL) {
+        // its open already
+        return true;
+    }
+
     static int log_failure_count = 0; // Counter for log failures
     static int directory_creation_failure_count = 0; // Counter for directory creation failures
 
     char directory_path[MAX_PATH];
 
     // Strip the directory path from the full file path
-    strip_directory_path(log_file_full_name, directory_path, sizeof(directory_path));
+    strip_directory_path(thread_log_file->log_file_name, directory_path, sizeof(directory_path));
     
     // Create the directories for the log file if they don't exist
     if (create_directories(directory_path) != 0) {
@@ -104,44 +179,47 @@ static int open_log_file() {
         }
     }
 
-    log_fp = fopen(log_file_full_name, "a");
-    if (!log_fp) {
+    thread_log_file->log_fp = fopen(thread_log_file->log_file_name, "a");
+    if (thread_log_file->log_fp == NULL) {
         if (log_failure_count == 0) {
             char error_message[LOG_MSG_BUFFER_SIZE];
-            snprintf(error_message, sizeof(error_message), "Failed to open log file: %s\n", log_file_full_name);
+            snprintf(error_message, sizeof(error_message), "Failed to open log file: %s\n", thread_log_file->log_file_name);
             fputs(error_message, stderr);
         }
 
         log_failure_count++;
         if (log_failure_count >= MAX_LOG_FAILURES) {
             char error_message[LOG_MSG_BUFFER_SIZE];
-            snprintf(error_message, sizeof(error_message), "Unrecoverable failure to open log file: %s\n. Exiting\n", log_file_full_name);
+            snprintf(error_message, sizeof(error_message), "Unrecoverable failure to open log file: %s\n. Exiting\n", thread_log_file->log_file_name);
             fputs(error_message, stderr);
             exit(EXIT_FAILURE); // Exit if logging is impossible over 100 iterations
         }
-        return 1;
+        return false;
     } else {
         log_failure_count = 0; // Reset the counter on successful log file open
     }
-    return 0;
+    return true;
 }
 
 /**
  * @brief Rotates the log file if it exceeds the configured size.
  */
-static void rotate_log_file() {
+static void rotate_log_file_if_needed(ThreadLogFile *thread_log_file) {
+    lock_mutex(&logging_mutex);
     struct stat st;
-    if (stat(log_file_full_name, &st) == 0 && st.st_size >= log_file_size) {
-        fclose(log_fp);
+    if (stat(thread_log_file->log_file_name, &st) == 0 && st.st_size >= log_file_size) {
+        fclose(thread_log_file->log_fp);
         char rotated_log_filename[512];
         generate_log_filename(rotated_log_filename, sizeof(rotated_log_filename));
         snprintf(rotated_log_filename + strlen(rotated_log_filename), sizeof(rotated_log_filename) - strlen(rotated_log_filename), ".old");
-        rename(log_file_full_name, rotated_log_filename);
-        if (open_log_file() != 0) {
+        rename(thread_log_file->log_file_name, rotated_log_filename);
+        thread_log_file->log_fp = fopen(thread_log_file->log_file_name, "a");
+        if (thread_log_file->log_fp == NULL) {
             unlock_mutex(&logging_mutex);
-            exit(EXIT_FAILURE); // Exit if logging is critical
+            return;
         }
     }
+    unlock_mutex(&logging_mutex);
 }
 
 /**
@@ -161,6 +239,12 @@ static void format_log_message(char *buffer, size_t buffer_size, LogLevel level,
     char message_buffer[LOG_MSG_BUFFER_SIZE];
     vsnprintf(message_buffer, sizeof(message_buffer), format, args);
 
+    // Strip off the newline character if it exists
+    size_t len = strlen(message_buffer);
+    if (len > 0 && message_buffer[len - 1] == '\n') {
+        message_buffer[len - 1] = '\0';
+    }
+
     if (get_thread_label()) {
         snprintf(buffer, buffer_size, "%010llu %s %s: [%s] %s", log_index++, time_str, log_level_to_string(level), get_thread_label(), message_buffer);
     } else {
@@ -173,37 +257,77 @@ static void format_log_message(char *buffer, size_t buffer_size, LogLevel level,
  * @param level The log level of the message.
  * @param message The formatted log message.
  */
-void log_immediately(const char *message) {
+static void log_immediately(const char *message) {
     lock_mutex(&logging_mutex);
 
     LogOutput prior_log_output = log_output;
 
-    rotate_log_file(); // Check and rotate log file if necessary
+    // // Rotate the main log file if needed
+    // if (thread_log_files[APP_LOG_FILE_INDEX].log_fp != NULL) {
+    //     rotate_log_file_if_needed(&thread_log_files[APP_LOG_FILE_INDEX]);
+    // }
 
-    if (log_fp == NULL) {
-        if (open_log_file() != 0) {
-            // if the log file cannot be opened, log to stderr only
-            log_output = LOG_OUTPUT_STDERR;
-        }
+    if (!open_log_file_if_needed(&thread_log_files[APP_LOG_FILE_INDEX])) {
+        // if the log file cannot be opened, log to stderr only
+        log_output = LOG_OUTPUT_STDERR;        
     }
 
     if (!message) {
         message = "Trying to log blank message";
     }
 
+    ThreadLogFile tlf = thread_log_files[APP_LOG_FILE_INDEX];
+    FILE *output_fp = thread_log_files[APP_LOG_FILE_INDEX].log_fp;
+    const char *output_file_name = thread_log_files[APP_LOG_FILE_INDEX].log_file_name;
+
+    // Check if the current thread has a specific log file
+    const char *current_thread_label = get_thread_label();
+    if (current_thread_label != NULL) {
+        for (int i = 1; i <= thread_log_file_count; i++) {
+            if (strcmp(thread_log_files[i].thread_label, current_thread_label) == 0) {
+                // Rotate the thread log file if needed
+                if (thread_log_files[i].log_fp != NULL) {
+                    rotate_log_file_if_needed(&thread_log_files[i]);
+                }
+
+                if (!open_log_file_if_needed(&thread_log_files[i])) {
+                    // Handle error if needed
+                }
+
+                output_fp = thread_log_files[i].log_fp;
+                output_file_name = thread_log_files[i].log_file_name;
+				tlf = thread_log_files[i];
+                break;
+            }
+        }
+    }
+
     if (log_output == LOG_OUTPUT_FILE || log_output == LOG_OUTPUT_BOTH) {
-        fputs(message, log_fp);
-        fputs("\n", log_fp);
-        fflush(log_fp);
+        if (output_fp != NULL) {
+            fputs(message, output_fp);
+            fputs("\n", output_fp);
+            fflush(output_fp);
+        }
     }
     if (log_output == LOG_OUTPUT_STDERR || log_output == LOG_OUTPUT_BOTH) {
         fputs(message, stderr);
         fputs("\n", stderr);
     }
 
+    // TODO Look at logging to a TCP/UDP socket as an option
+
     log_output = prior_log_output;
 
     unlock_mutex(&logging_mutex);
+}
+
+/**
+ * @brief Logs a message avoiding the queue
+ * @param level The log level of the message.
+ * @param message The formatted log message.
+ */
+void log_now(const char* message) {
+    log_immediately(message);
 }
 
 /**
@@ -227,10 +351,12 @@ void logger_log(LogLevel level, const char *format, ...) {
     format_log_message(log_buffer, sizeof(log_buffer), level, log_message, args);
     va_end(args);
 
-    // if (logging_thread_started && !platform_thread_equal(platform_thread_self(), main_thread_id)) {
     if (logging_thread_started) {
         // Push the log message to the queue
-        log_queue_push(&log_queue, level, log_buffer);
+        if (log_queue_push(&log_queue, level, log_buffer) != 0) {
+            // If the queue is full, log directly to file and console
+            log_immediately(log_buffer);
+        }
     } else {
         // Log directly to file and console
         log_immediately(log_buffer);
@@ -239,77 +365,35 @@ void logger_log(LogLevel level, const char *format, ...) {
 
 /**
  * @brief Initializes the logger with the configured log file path, name, and size.
- * @return 1 on success, 0 on failure.
  */
 bool init_logger_from_config(char *logger_init_result) {
-    init_mutex(&logging_mutex);
+    init_mutex(&logging_mutex);    
     lock_mutex(&logging_mutex);
 
-    const char* config_log_file_path = get_config_string("logger", "log_file_path", log_file_path);
-    if (log_file_path != config_log_file_path) {
-        strncpy(log_file_path, config_log_file_path, sizeof(log_file_path) - 1);
-        log_file_path[sizeof(log_file_path) - 1] = '\0';
+    const char* config_log_file_path = get_config_string("logger", CONFIG_LOG_PATH_KEY, log_file_path);
+    const char* config_log_file_name = get_config_string("logger", CONFIG_LOG_FILE_KEY, log_file_name);
+
+    if (strlen(config_log_file_name) > 0) {
+        if (strlen(config_log_file_path) > 0) {
+            construct_log_file_name(thread_log_files[APP_LOG_FILE_INDEX].log_file_name, sizeof(thread_log_files[APP_LOG_FILE_INDEX].log_file_name), config_log_file_path, config_log_file_name);
+        } else {
+            strncpy(thread_log_files[APP_LOG_FILE_INDEX].log_file_name, config_log_file_name, sizeof(thread_log_files[APP_LOG_FILE_INDEX].log_file_name) - 1);
+            thread_log_files[APP_LOG_FILE_INDEX].log_file_name[sizeof(thread_log_files[APP_LOG_FILE_INDEX].log_file_name) - 1] = '\0';
+        }
+        sanitise_path(thread_log_files[APP_LOG_FILE_INDEX].log_file_name);
     }
-
-    sanitise_path(log_file_path);
-
-    const char* config_log_file_name = get_config_string("logger", "log_file_name", log_file_name);
-    if (log_file_name != config_log_file_name) { 
-        strncpy(log_file_name, config_log_file_name, sizeof(log_file_name) - 1);
-        log_file_name[sizeof(log_file_name) - 1] = '\0';
-    }
-
-    sanitise_path(log_file_name);
-
-    if (strlen(log_file_path) > 0) {
-        snprintf(log_file_full_name, sizeof(log_file_full_name), "%s%c%s", log_file_path, PATH_SEPARATOR, log_file_name);
-    } else {
-        snprintf(log_file_full_name, sizeof(log_file_full_name), "%s", log_file_name);
-    }
-
+    // Increment thread_log_file_count to account for the main application log file
+    thread_log_file_count++;
     log_file_size = get_config_int("logger", "log_file_size", log_file_size);
 
     // Initialize log queue
     log_queue_init(&log_queue);
 
-    snprintf(logger_init_result, LOG_MSG_BUFFER_SIZE, "Logger initialised. App logging to %s", log_file_full_name);
+    snprintf(logger_init_result, LOG_MSG_BUFFER_SIZE, "Logger initialised. App logging to %s", thread_log_files[APP_LOG_FILE_INDEX].log_file_name);
+    logging_thread_started = true;
     unlock_mutex(&logging_mutex);
     return true;
 }
-
-/**
- * @brief Sets the log file for the current thread based on the config.
- * @param thread_name The name of the thread.
- */
-void set_thread_log_file_from_config(const char *thread_name) {
-    char config_key[MAX_PATH];
-    snprintf(config_key, sizeof(config_key), "%s.log_file", thread_name);
-    const char* config_thread_log_file = get_config_string("logger", config_key, NULL);
-    if (config_thread_log_file) {
-        set_log_thread_file(config_thread_log_file);
-    }
-}
-
-/**
- * @brief Initializes the logger for a specific thread.
- * @param thread_name The name of the thread.
- */
-void init_thread_logger(const char *thread_name) {
-    // set_log_thread_label(thread_name);
-    set_thread_log_file_from_config(thread_name);
-}
-
-// /**
-//  * @brief Starts the logging thread.
-//  */
-// void start_logging_thread() {
-//     lock_mutex(&log_mutex);
-//     if (!logging_thread_started) {
-//         platform_thread_create(&log_thread, log_thread_function, NULL);
-//         logging_thread_started = 1;
-//     }
-//     unlock_mutex(&log_mutex);
-// }
 
 /**
  * @brief Sets the log level.
@@ -332,10 +416,14 @@ void logger_set_output(LogOutput output) {
  */
 void logger_close() {
     lock_mutex(&logging_mutex);
-    if (log_fp) {
-        fclose(log_fp);
-        log_fp = NULL;
+    // Close all thread-specific log files
+    for (int i = 0; i < thread_log_file_count; i++) {
+        if (thread_log_files[i].log_fp) {
+            fclose(thread_log_files[i].log_fp);
+        }
     }
+    thread_log_file_count = 0;
+
     unlock_mutex(&logging_mutex);
 
     if (logging_thread_started) {

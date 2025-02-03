@@ -26,7 +26,7 @@
 #ifdef _WIN32
 const char PATH_SEPARATOR = '\\';
 #else
-const char PATH_SEPARATOR = '/';
+const char PATH_SEPARATOR = '/'
 #endif
 
 uint64_t platform_strtoull(const char* str, char** endptr, int base) {
@@ -74,6 +74,11 @@ void platform_sleep(unsigned int milliseconds) {
 #else
     usleep(milliseconds * 1000);
 #endif
+}
+
+void sleep_seconds(double seconds) {
+    unsigned int milliseconds = (unsigned int)(seconds * 1000);
+    platform_sleep(milliseconds);
 }
 
 void sanitise_path(char* path) {

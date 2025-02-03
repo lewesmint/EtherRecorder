@@ -3,6 +3,15 @@
 
 #include "platform_threads.h"
 #include "logger.h"
+#include <stdbool.h>
+#include <windows.h>
+
+extern bool shutdown_flag;
+extern CONDITION_VARIABLE shutdown_condition;
+extern CRITICAL_SECTION shutdown_mutex;
+
+void request_shutdown(void);
+bool wait_for_shutdown(int timeout_ms);
 
 /**
  * @brief Function pointer type for pre-create functions.
@@ -57,5 +66,11 @@ void start_threads();
  * @return The label of the current thread.
  */
 const char* get_thread_label();
+
+/**
+ * @brief Sets the label of the current thread.
+ * @param label The label to set.
+ */
+void set_thread_label(const char *label);
 
 #endif // APP_THREAD_H

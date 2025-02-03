@@ -23,18 +23,10 @@
 #endif // _WIN32
 
 /*
- * Extern declaration of a platform–specific path separator.
+ * Extern declaration of a platform-specific path separator.
  * The definition will be in platform_utils.c, where we handle _WIN32.
  */
 extern const char PATH_SEPARATOR;
-
-// /**
-// * @brief Maximum file path length.
-// *
-// */
-//#define PLATFORM_PATH_MAX  (\
-//    (defined(_WIN32) ? MAX_PATH : PATH_MAX) \
-//)
 
 /**
  * @brief Converts a string to an unsigned 64-bit integer.
@@ -85,6 +77,12 @@ void stream_print(FILE* stream, const char* format, ...);
 void platform_sleep(unsigned int milliseconds);
 
 /**
+ * @brief Sleeps for a specified number of seconds (as a double).
+ * @param seconds Number of seconds to sleep.
+ */
+void sleep_seconds(double seconds);
+
+/**
  * @brief Sanitises a file path by trimming spaces, removing trailing slashes
  *        and converting path separators to the platform default.
  * @param path The path to sanitise.
@@ -119,7 +117,6 @@ void init_console();
  * @return true on success, false on failure.
  */
 bool resolve_full_path(const char* filename, char* full_path, size_t size);
-
 
 /**
  * @brief Provides a case-insensitive string comparison.

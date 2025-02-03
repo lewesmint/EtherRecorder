@@ -3,6 +3,7 @@
 
 #include "app_config.h"
 #include "platform_utils.h"
+#include "platform_mutex.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,7 +40,20 @@ static void trim_whitespace(char *str) {
     end = str + strlen(str) - 1;
     while (end > str && isspace((unsigned char)*end)) end--;
 
-    end[1] = '\0';
+    // Write new null terminator
+    *(end + 1) = 0;
+}
+
+static ConfigEntry* find_config_entry(const char *section, const char *key) {
+    ConfigEntry *entry = config_entries;
+    while (entry) {
+        if (platform_strcasecmp(entry->section, section) == 0 &&
+            platform_strcasecmp(entry->key, key) == 0) {
+            return entry;
+        }
+        entry = entry->next;
+    }
+    return NULL;
 }
 
 /**
@@ -103,15 +117,15 @@ bool load_config(const char *filename, char* log_result) {
 }
 
 /**
- * @copydoc get_config_string
+ * @brief Retrieves a configuration value as a string.
+ * @param section The section in the configuration file.
+ * @param key The key within the section.
+ * @param default_value The default value to return if the key is not found.
+ * @return The configuration value as a string, or @p default_value if not found.
  */
 const char* get_config_string(const char *section, const char *key, const char *default_value) {
-    for (ConfigEntry *entry = config_entries; entry; entry = entry->next) {
-        if (strcmp(entry->section, section) == 0 && strcmp(entry->key, key) == 0) {
-            return entry->value;
-        }
-    }
-    return default_value;
+    ConfigEntry *entry = find_config_entry(section, key);
+    return entry ? entry->value : default_value;
 }
 
 /**
@@ -128,7 +142,7 @@ int get_config_int(const char *section, const char *key, int default_value) {
 bool get_config_bool(const char *section, const char *key, bool default_value) {
     const char *value = get_config_string(section, key, NULL);
     if (!value) return default_value;
-    return (platform_strcasecmp(value, "true") == false || strcmp(value, "1") == true);
+    return (platform_strcasecmp(value, "true") == 0 || strcmp(value, "1") == 0);
 }
 
 /**
@@ -144,8 +158,7 @@ double get_config_float(const char *section, const char *key, double default_val
  */
 uint64_t get_config_hex(const char *section, const char *key, uint64_t default_value) {
     const char *value = get_config_string(section, key, NULL);
-    if (!value) return default_value;
-    return strtoull(value, NULL, 16);
+    return value ? strtoull(value, NULL, 16) : default_value;
 }
 
 /**
