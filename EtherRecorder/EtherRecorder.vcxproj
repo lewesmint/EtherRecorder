@@ -29,6 +29,8 @@
   <ItemGroup>
     <ClCompile Include="src\app_config.c" />
     <ClCompile Include="src\app_thread.c" />
+    <ClCompile Include="src\client_manager.c" />
+    <ClCompile Include="src\common_socket.c" />
     <ClCompile Include="src\generic_thread.c" />
     <ClCompile Include="src\logger.c" />
     <ClCompile Include="src\log_queue.c" />
@@ -37,11 +39,15 @@
     <ClCompile Include="src\platform_sockets.c" />
     <ClCompile Include="src\platform_threads.c" />
     <ClCompile Include="src\platform_utils.c" />
+    <ClCompile Include="src\server_manager.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="inc\app_config.h" />
     <ClInclude Include="inc\app_error.h" />
     <ClInclude Include="inc\app_thread.h" />
+    <ClInclude Include="inc\client_manager.h" />
+    <ClInclude Include="inc\common_socket.h" />
+    <ClInclude Include="inc\common_winsock.h" />
     <ClInclude Include="inc\config.h" />
     <ClInclude Include="inc\logger.h" />
     <ClInclude Include="inc\log_queue.h" />
@@ -49,6 +55,7 @@
     <ClInclude Include="inc\platform_sockets.h" />
     <ClInclude Include="inc\platform_threads.h" />
     <ClInclude Include="inc\platform_utils.h" />
+    <ClInclude Include="inc\server_manager.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
@@ -161,6 +168,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>shlwapi.lib;ws2_32.lib;bcrypt.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -179,6 +187,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>shlwapi.lib;ws2_32.lib;bcrypt.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -193,6 +202,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>shlwapi.lib;ws2_32.lib;bcrypt.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -211,6 +221,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>shlwapi.lib;ws2_32.lib;bcrypt.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
@@ -225,6 +236,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>shlwapi.lib;ws2_32.lib;bcrypt.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
@@ -243,6 +255,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>shlwapi.lib;ws2_32.lib;bcrypt.lib</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

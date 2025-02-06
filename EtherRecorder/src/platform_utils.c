@@ -11,7 +11,9 @@
 #include <windows.h>
 #include <direct.h>
 #include <shlwapi.h>
-#pragma comment(lib, "shlwapi.lib")
+// it is necessary to link with shlwapi.lib,
+// but it is done in the project file. So pragma not required
+// #pragma comment(lib, "shlwapi.lib")
 #define platform_mkdir(path) _mkdir(path)
 #else
 #include <pthread.h>
@@ -28,6 +30,8 @@ const char PATH_SEPARATOR = '\\';
 #else
 const char PATH_SEPARATOR = '/'
 #endif
+
+extern CRITICAL_SECTION rand_mutex;
 
 uint64_t platform_strtoull(const char* str, char** endptr, int base) {
     return strtoull(str, endptr, base);
@@ -57,6 +61,13 @@ void unlock_mutex(PlatformMutex_T* mutex) {
     platform_mutex_unlock(mutex);
 }
 
+// int platform_rand() {
+//     EnterCriticalSection(&rand_mutex);
+//     int result = rand();
+//     LeaveCriticalSection(&rand_mutex);
+//     return result;
+// }
+
 void stream_print(FILE* stream, const char* format, ...) {
     char buffer[1024];
     va_list args;
@@ -68,7 +79,7 @@ void stream_print(FILE* stream, const char* format, ...) {
     }
 }
 
-void platform_sleep(unsigned int milliseconds) {
+void sleep_ms(unsigned int milliseconds) {
 #ifdef _WIN32
     Sleep(milliseconds);
 #else
@@ -78,7 +89,7 @@ void platform_sleep(unsigned int milliseconds) {
 
 void sleep_seconds(double seconds) {
     unsigned int milliseconds = (unsigned int)(seconds * 1000);
-    platform_sleep(milliseconds);
+    sleep_ms(milliseconds);
 }
 
 void sanitise_path(char* path) {
@@ -178,4 +189,57 @@ int platform_strcasecmp(const char *s1, const char *s2) {
     }
     
     return tolower((unsigned char)*s1) - tolower((unsigned char)*s2);
+}
+
+/**
+ * @brief Generates a random number using the system's preferred RNG.
+ * @return A random number.
+ */
+uint32_t platform_random() {
+    uint32_t random_number = 0;
+
+#ifdef _WIN32
+    if (BCryptGenRandom(NULL, (PUCHAR)&random_number, sizeof(random_number), BCRYPT_USE_SYSTEM_PREFERRED_RNG) != 0) {
+        fprintf(stderr, "BCryptGenRandom failed!\n");
+        return 0;  // Return 0 on failure
+    }
+#else
+    #if defined(__linux__)
+        if (getrandom(&random_number, sizeof(random_number), 0) == sizeof(random_number)) {
+            return random_number;
+        }
+    #endif
+
+    // Fallback to /dev/urandom if getrandom() is unavailable
+    int fd = open("/dev/urandom", O_RDONLY);
+    if (fd != -1) {
+        if (read(fd, &random_number, sizeof(random_number)) == sizeof(random_number)) {
+            close(fd);
+            return random_number;
+        }
+        close(fd);
+    }
+
+    // Last fallback: rand_r() with a thread-local seed
+    static __thread unsigned int seed = 0;
+    if (seed == 0) seed = time(NULL) ^ (uintptr_t)&seed;  // Thread-safe seed
+    random_number = rand_r(&seed);
+#endif
+
+    return random_number;
+}
+
+/**
+ * Generates a random number within a given range.
+ * @param min Minimum value (inclusive).
+ * @param max Maximum value (inclusive).
+ * @return A random number in the range [min, max].
+ */
+uint32_t platform_random_range(uint32_t min, uint32_t max) {
+    if (min > max) {
+        uint32_t temp = min;
+        min = max;
+        max = temp;
+    }
+    return min + (platform_random() % (max - min + 1));
 }

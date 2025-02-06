@@ -4,8 +4,8 @@
         {
             "label": "Clean",
             "type": "shell",
-            "command": "nmake",
-            "args": ["/f", "MakeWin.mak", "clean"],
+            "command": "nake",
+            "args": ["-f", "Makefile", "clean"],
             "group": "build",
             "problemMatcher": [],
             "detail": "Clean the project using the Makefile",
@@ -20,7 +20,7 @@
             "label": "Build Debug",
             "type": "shell",
             "command": "make",
-            "args": ["-f", "MakeWin.mak", "debug"],
+            "args": ["-f", "Makefile", "debug"],
             "group": {
                 "kind": "build",
                 "isDefault": true
@@ -38,7 +38,7 @@
             "label": "Build Release",
             "type": "shell",
             "command": "make",
-            "args": ["-f", "MakeWin.mak", "release"],
+            "args": ["-f", "Makefile", "release"],
             "group": {
                 "kind": "build",
                 "isDefault": false
@@ -56,7 +56,7 @@
             "label": "Clean and Build Debug",
             "type": "shell",
             "command": "cmd",
-            "args": ["/c", "nmake /f MakeWin.mak clean && nmake /f MakeWin.mak debug"],
+            "args": ["/c", "make -f Makefile clean && make /f Makefile debug"],
             "group": {
                 "kind": "build",
                 "isDefault": true

@@ -6,7 +6,7 @@
 #include <stdbool.h>
 #include <windows.h>
 
-extern bool shutdown_flag;
+
 extern CONDITION_VARIABLE shutdown_condition;
 extern CRITICAL_SECTION shutdown_mutex;
 

@@ -1,21 +1,14 @@
 #ifndef LOG_QUEUE_H
 #define LOG_QUEUE_H
 
-typedef int placeholder_size_T;
-
 #include "logger.h"
 
-#define LOG_QUEUE_SIZE 1024 // Size of the log queue
-#define THREAD_LABEL_SIZE 64 // Buffer size for thread labels
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-/**
- * @brief Structure representing a log entry.
- */
-typedef struct LogEntry_T {
-    LogLevel level;
-    char message[LOG_MSG_BUFFER_SIZE];
-    char thread_label[THREAD_LABEL_SIZE]; // Add thread label field
-} LogEntry_T;
+#define LOG_QUEUE_SIZE 1024 // Size of the log queue
+
 
 /**
  * @brief Structure representing a log queue.
@@ -34,14 +27,8 @@ extern LogQueue_T log_queue; // Declare the log queue
  */
 void log_queue_init(LogQueue_T *queue);
 
-// /**
-//  * @brief Pushes a log entry onto the log queue.
-//  * @param queue The log queue.
-//  * @param level The log level of the message.
-//  * @param message The log message.
-//  * @return 0 on success, -1 if the queue is full.
-//  */
-bool log_queue_push(LogQueue_T *log_queue, LogLevel level, const char *log_buffer);
+
+bool log_queue_push(LogQueue_T *log_queue, const LogEntry_T *entry);
 
 /**
  * @brief Pops a log entry from the log queue.
@@ -52,5 +39,10 @@ bool log_queue_push(LogQueue_T *log_queue, LogLevel level, const char *log_buffe
 bool log_queue_pop(LogQueue_T *queue, LogEntry_T *entry);
 
 bool log_queue_pop_debug(LogQueue_T *queue, LogEntry_T *entry);
+
+#ifdef __cplusplus
+}   // extern "C"
+#endif
+
 
 #endif // LOG_QUEUE_H

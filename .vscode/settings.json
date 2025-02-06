@@ -8,5 +8,8 @@
             "binaryPath": "c:\\code\\c_code\\EtherRecorder\\Win32\\Debug\\EtherRecorder.exe",
             "binaryArgs": []
         }
-    ]
+    ],
+    "files.associations": {
+        "client_manager.h": "c"
+    }
 }

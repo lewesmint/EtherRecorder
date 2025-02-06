@@ -255,17 +255,23 @@ static void format_log_message(char *buffer, size_t buffer_size, LogLevel level,
 /**
  * @brief Logs a message immediately to file and console.
  * @param level The log level of the message.
- * @param message The formatted log message.
+ * @param entry The formatted log message.
  */
-static void log_immediately(const char *message) {
+static void log_immediately(LogEntry_T *entry) {
     lock_mutex(&logging_mutex);
+    char *message = entry->message;
+    char *thread_label = entry->thread_label;
+
+    if (thread_label == NULL) {
+        thread_label = get_thread_label();
+    }   
 
     LogOutput prior_log_output = log_output;
 
-    // // Rotate the main log file if needed
-    // if (thread_log_files[APP_LOG_FILE_INDEX].log_fp != NULL) {
-    //     rotate_log_file_if_needed(&thread_log_files[APP_LOG_FILE_INDEX]);
-    // }
+    // Rotate the main log file if needed
+    if (thread_log_files[APP_LOG_FILE_INDEX].log_fp != NULL) {
+        rotate_log_file_if_needed(&thread_log_files[APP_LOG_FILE_INDEX]);
+    }
 
     if (!open_log_file_if_needed(&thread_log_files[APP_LOG_FILE_INDEX])) {
         // if the log file cannot be opened, log to stderr only
@@ -279,19 +285,18 @@ static void log_immediately(const char *message) {
     ThreadLogFile tlf = thread_log_files[APP_LOG_FILE_INDEX];
     FILE *output_fp = thread_log_files[APP_LOG_FILE_INDEX].log_fp;
     const char *output_file_name = thread_log_files[APP_LOG_FILE_INDEX].log_file_name;
-
+    
     // Check if the current thread has a specific log file
-    const char *current_thread_label = get_thread_label();
-    if (current_thread_label != NULL) {
+    if (thread_label != NULL) {
         for (int i = 1; i <= thread_log_file_count; i++) {
-            if (strcmp(thread_log_files[i].thread_label, current_thread_label) == 0) {
+            if (platform_strcasecmp(thread_log_files[i].thread_label, thread_label) == 0) {
                 // Rotate the thread log file if needed
                 if (thread_log_files[i].log_fp != NULL) {
                     rotate_log_file_if_needed(&thread_log_files[i]);
                 }
 
                 if (!open_log_file_if_needed(&thread_log_files[i])) {
-                    // Handle error if needed
+                    // TODO Handle error 
                 }
 
                 output_fp = thread_log_files[i].log_fp;
@@ -307,11 +312,16 @@ static void log_immediately(const char *message) {
             fputs(message, output_fp);
             fputs("\n", output_fp);
             fflush(output_fp);
+        } else {
+            // if the log file cannot be opened, log to stderr only
+            printf("File Error: %s: msg:%s\n", output_file_name, message);
         }
+
     }
     if (log_output == LOG_OUTPUT_STDERR || log_output == LOG_OUTPUT_BOTH) {
         fputs(message, stderr);
         fputs("\n", stderr);
+        fflush(stderr);
     }
 
     // TODO Look at logging to a TCP/UDP socket as an option
@@ -323,25 +333,18 @@ static void log_immediately(const char *message) {
 
 /**
  * @brief Logs a message avoiding the queue
- * @param level The log level of the message.
- * @param message The formatted log message.
  */
-void log_now(const char* message) {
-    log_immediately(message);
+void log_now(LogEntry_T *entry) {
+    log_immediately(entry);
 }
 
-/**
- * @brief Logs a message with the specified log level and format.
- * @param level The log level of the message.
- * @param format The format string (like printf).
- */
+
 void logger_log(LogLevel level, const char *format, ...) {
     va_list args;
     va_start(args, format);
+    
     const char *this_thread_label = get_thread_label();
-
-    // Retrieve the thread name from the thread-local variable
-    const char *name = this_thread_label ? this_thread_label : "unknown";
+    const char *name = this_thread_label ? this_thread_label : "UNKNOWN";
 
     // Format the log message to include the thread name
     char log_message[256];
@@ -351,17 +354,23 @@ void logger_log(LogLevel level, const char *format, ...) {
     format_log_message(log_buffer, sizeof(log_buffer), level, log_message, args);
     va_end(args);
 
+    LogEntry_T entry;
+    entry.level = level;
+    // Copy the log label and message safely
+    strncpy(entry.thread_label, name, THREAD_LABEL_SIZE - 1);
+    strncpy(entry.message, log_buffer, LOG_MSG_BUFFER_SIZE - 1);
+    entry.message[LOG_MSG_BUFFER_SIZE - 1] = '\0'; // Ensure null termination
+
     if (logging_thread_started) {
-        // Push the log message to the queue
-        if (log_queue_push(&log_queue, level, log_buffer) != 0) {
-            // If the queue is full, log directly to file and console
-            log_immediately(log_buffer);
+        // Push the log message to the queue; if full, log immediately
+        if (!log_queue_push(&log_queue, &entry)) {
+            log_immediately(&entry);
         }
     } else {
-        // Log directly to file and console
-        log_immediately(log_buffer);
+        log_immediately(&entry);
     }
 }
+
 
 /**
  * @brief Initializes the logger with the configured log file path, name, and size.

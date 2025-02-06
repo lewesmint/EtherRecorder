@@ -12,15 +12,22 @@
 #include "platform_mutex.h"
 
 #ifdef _WIN32
-#include <Windows.h>
-#ifndef PATH_MAX
-#define PATH_MAX MAX_PATH
-#endif // PATH_MAX
+    #include <windows.h>
+    #include <bcrypt.h>
+    #define sleep(x) Sleep(1000 * (x))
+    #ifndef PATH_MAX
+        #define PATH_MAX MAX_PATH
+    #endif // PATH_MAX
 #else // !_WIN32
-#ifndef MAX_PATH
-#define MAX_PATH PATH_MAX
-#endif // MAX_PATH
+    #ifndef MAX_PATH
+        #define MAX_PATH PATH_MAX
+    #endif // MAX_PATH
+    #include <stdlib.h>
+    #include <fcntl.h>
+    #include <unistd.h>
+    #include <sys/random.h>
 #endif // _WIN32
+
 
 /*
  * Extern declaration of a platform-specific path separator.
@@ -74,13 +81,19 @@ void stream_print(FILE* stream, const char* format, ...);
  * @brief Sleeps for a specified number of milliseconds.
  * @param milliseconds Number of milliseconds to sleep.
  */
-void platform_sleep(unsigned int milliseconds);
+void sleep_ms(unsigned int milliseconds);
 
 /**
  * @brief Sleeps for a specified number of seconds (as a double).
  * @param seconds Number of seconds to sleep.
  */
 void sleep_seconds(double seconds);
+
+// /**
+//  * @brief Generates a random number.
+//  * @return A random number. Protected by a mutex.
+//  */
+// int platform_rand();
 
 /**
  * @brief Sanitises a file path by trimming spaces, removing trailing slashes
@@ -127,5 +140,9 @@ bool resolve_full_path(const char* filename, char* full_path, size_t size);
  *         and a positive value if s1 > s2.
  */
 int platform_strcasecmp(const char *s1, const char *s2);
+
+uint32_t platform_random();
+uint32_t platform_random_range(uint32_t min, uint32_t max);
+
 
 #endif // PLATFORM_UTILS_H

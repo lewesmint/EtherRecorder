@@ -8,9 +8,11 @@
 #include "platform_utils.h"
 #include "platform_threads.h"
 #include "app_config.h"
-#include "logger.h"
 #include "log_queue.h"
+#include "logger.h"
 #include "platform_mutex.h"
+#include "client_manager.h"
+#include "server_manager.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -24,8 +26,8 @@ THREAD_LOCAL static const char *thread_label = NULL;
 
 static CONDITION_VARIABLE logger_thread_condition;
 static CRITICAL_SECTION logger_thread_mutex_in_app_thread;
-static bool logger_ready = false;
-static bool shutdown_flag = false;
+volatile bool logger_ready = false;
+volatile bool shutdown_flag = false;
 
 typedef enum WaitResult {
     APP_WAIT_SUCCESS = 0,
@@ -66,6 +68,7 @@ const char* get_thread_label() {
 
 #define LOG_ITERATIONS 10000
 
+
 void* generic_thread_function(void* arg) {
     AppThreadArgs_T* thread_info = (AppThreadArgs_T*)arg;
     long count = 0;
@@ -78,54 +81,69 @@ void* generic_thread_function(void* arg) {
         for (int j = 0; j < LOG_FATAL; j++) { // Assuming LOG_FATAL is the highest log level
             LogLevel level = (LogLevel)(j % (LOG_FATAL + 1));
             logger_log(level, "%s logging %s msg:%d", get_thread_label(), log_level_to_string(level), count++);
-            platform_sleep(50); // Simulate some work            
+            sleep_ms(5000); // Simulate some work            
         }
     }
     logger_log(LOG_INFO, "Thread %s completed msg:%d", thread_info->label, count++);
     return NULL;
 }
 
-void* client_thread_function(void* arg) {
+void* blank_thread_function(void* arg) {
     AppThreadArgs_T* thread_info = (AppThreadArgs_T*)arg;
+
+    logger_log(LOG_INFO, "Thread %s started msg:", thread_info->label);
+    while (!shutdown_flag) { // Assuming LOG_FATAL is the highest log level
+        LogLevel level = (LogLevel)(LOG_FATAL);
+        // 10000 seconds of sleeping between checks
+        sleep_seconds(10000); // Simulate some work
+    }
+
+    logger_log(LOG_INFO, "Thread %s completed msg:%d", thread_info->label);
+    return NULL;
+}
+
+// void* client_thread_function(void* arg) {
+//     AppThreadArgs_T* thread_info = (AppThreadArgs_T*)arg;
     
-    // Client-specific functionality here
+//     // Client-specific functionality here
 
-    logger_log(LOG_INFO, "Thread %s started", thread_info->label);
-    for (int i = 0; i < LOG_ITERATIONS; i++) {
-        if (shutdown_flag) {
-            logger_log(LOG_INFO, "Thread %s is shutting down early as instructed", thread_info->label);
-            break;
-        }
-        for (int j = 0; j < LOG_FATAL; j++) { // Assuming LOG_FATAL is the highest log level
-            LogLevel level = (LogLevel)(j % (LOG_FATAL + 1));
-            logger_log(level, "%s logging %s", get_thread_label(), log_level_to_string(level));
-            platform_sleep(150); // Simulate some work            
-        }
-    }
-    logger_log(LOG_INFO, "Thread %s completed", thread_info->label);
-    return NULL;
-}
+//     logger_log(LOG_INFO, "Thread %s started", thread_info->label);
+//     for (int i = 0; i < LOG_ITERATIONS; i++) {
+//         if (shutdown_flag) {
+//             logger_log(LOG_INFO, "Thread %s is shutting down early as instructed", thread_info->label);
+//             break;
+//         }
+//         // pretending to do some work
+//         for (int j = 0; j < LOG_FATAL; j++) { // Assuming LOG_FATAL is the highest log level
+//             LogLevel level = (LogLevel)(j % (LOG_FATAL + 1));
+//             logger_log(level, "%s logging %s", get_thread_label(), log_level_to_string(level));
+//             platform_sleep(150); // Simulate some work            
+//         }
+//     }
+//     logger_log(LOG_INFO, "Thread %s completed", thread_info->label);
+//     return NULL;
+// }
 
-void* server_thread_function(void* arg) {
-    AppThreadArgs_T* thread_info = (AppThreadArgs_T*)arg;
-    logger_log(LOG_INFO, "Server thread [%s] started", get_thread_label());
+// void* server_thread_function(void* arg) {
+//     AppThreadArgs_T* thread_info = (AppThreadArgs_T*)arg;
+//     logger_log(LOG_INFO, "Server thread [%s] started", get_thread_label());
 
-    // Server-specific functionality here
+//     // Server-specific functionality here
 
-    for (int i = 0; i < LOG_ITERATIONS; i++) {
-        if (shutdown_flag) {
-            logger_log(LOG_INFO, "Thread %s is shutting down early as instructed", thread_info->label);
-            break;
-        }
-        for (int j = 0; j < LOG_FATAL; j++) { // Assuming LOG_FATAL is the highest log level
-            LogLevel level = (LogLevel)(j % (LOG_FATAL + 1));
-            logger_log(level, "%s logging %s", get_thread_label(), log_level_to_string(level));
-            platform_sleep(500); // Simulate some work            
-        }
-    }
-    logger_log(LOG_INFO, "Thread %s completed", thread_info->label);
-    return NULL;
-}
+//     for (int i = 0; i < LOG_ITERATIONS; i++) {
+//         if (shutdown_flag) {
+//             logger_log(LOG_INFO, "Thread %s is shutting down early as instructed", thread_info->label);
+//             break;
+//         }
+//         for (int j = 0; j < LOG_FATAL; j++) { // Assuming LOG_FATAL is the highest log level
+//             LogLevel level = (LogLevel)(j % (LOG_FATAL + 1));
+//             logger_log(level, "%s logging %s", get_thread_label(), log_level_to_string(level));
+//             platform_sleep(500); // Simulate some work            
+//         }
+//     }
+//     logger_log(LOG_INFO, "Thread %s completed", thread_info->label);
+//     return NULL;
+// }
 
 void* logger_thread_function(void* arg) {
     AppThreadArgs_T* thread_info = (AppThreadArgs_T*)arg;
@@ -144,19 +162,31 @@ void* logger_thread_function(void* arg) {
     LogEntry_T entry;
     bool running = true; // Flag to handle graceful shutdown later
 
-    printf("Currently this is deliberately running the logger queue processing slowly to test queueing\n");
+    // printf("Currently this is deliberately running the logger queue processing slowly to test queueing\n");
+    // not anymore ... but we're still testing, so don't remove this just yet
     while (running) {
-        while (log_queue_pop_debug(&log_queue, &entry)) {
-            log_now(entry.message);
-            platform_sleep(40);
+        // while (log_queue_pop_debug(&log_queue, &entry)) {
+        while (log_queue_pop(&log_queue, &entry)) {
+            if (*entry.thread_label == '\0') {
+                printf("Logger thread processing log from: NULL\n");
+            } else {
+                printf("Logger thread processing log from: %s\n", entry.thread_label);
+            }
+            log_now(&entry);
+            // sleep_ms(40);
         }
 
-        platform_sleep(1);
+        sleep_ms(1);
 
         if (shutdown_flag) {
             running = false;
         }
     }
+
+    // logger should only shut off when all other threads have shut down
+    // so we need to hear from the other threads that they are done
+
+    sleep_seconds(20000);
 
     logger_log(LOG_INFO, "Logger thread shutting down.");
     return NULL;
@@ -199,11 +229,23 @@ void* exit_stub(void* arg) {
 
 static void* init_wait_for_logger(void* arg);
 
-AppThreadArgs_T all_threads[] = {
+static ServerThreadArgs_T server_thread_args = {
+    .port = 4200,
+    .is_tcp = true
+};
+
+static ClientThreadArgs_T client_thread_args = {
+    .client_hostname = "localhost",
+    .port = 4200,
+    .is_tcp = true
+};
+
+static AppThreadArgs_T all_threads[] = {
     {
         .label = "CLIENT",
-        .func = client_thread_function,
-        .data = NULL,
+        // .func = client_thread_function,
+        .func = clientMainThread,
+        .data = &client_thread_args,
         .pre_create_func = pre_create_stub,
         .post_create_func = post_create_stub,
         .init_func = init_wait_for_logger,
@@ -211,8 +253,9 @@ AppThreadArgs_T all_threads[] = {
     },
     {
         .label = "SERVER",
-        .func = server_thread_function,
-        .data = NULL,
+        // .func = server_thread_function,
+        .func = serverListenerThread,
+        .data = &server_thread_args,
         .pre_create_func = pre_create_stub,
         .post_create_func = post_create_stub,
         .init_func = init_wait_for_logger,
@@ -220,7 +263,8 @@ AppThreadArgs_T all_threads[] = {
     },
     {
         .label = "GENERIC-1",
-        .func = generic_thread_function,
+        // .func = generic_thread_function,
+        .func = blank_thread_function,
         .data = NULL,
         .pre_create_func = pre_create_stub,
         .post_create_func = post_create_stub,
@@ -229,7 +273,8 @@ AppThreadArgs_T all_threads[] = {
     },
     {
         .label = "GENERIC-2",
-        .func = generic_thread_function,
+        // .func = generic_thread_function,
+        .func = blank_thread_function,
         .data = NULL,
         .pre_create_func = pre_create_stub,
         .post_create_func = post_create_stub,
@@ -238,7 +283,8 @@ AppThreadArgs_T all_threads[] = {
     },
     {
         .label = "GENERIC-3",
-        .func = generic_thread_function,
+        // .func = generic_thread_function,
+        .func = blank_thread_function,
         .data = NULL,
         .pre_create_func = pre_create_stub,
         .post_create_func = post_create_stub,

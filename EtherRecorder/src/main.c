@@ -1,5 +1,5 @@
 #include <stdio.h>
-
+#include "platform_sockets.h"
 #include "app_error.h"
 #include "logger.h"
 #include "app_config.h"
@@ -8,9 +8,55 @@
 #include "log_queue.h"
 #include "app_thread.h"
 
-bool shutdown_flag = false;
+extern volatile bool shutdown_flag;
+
 CONDITION_VARIABLE shutdown_condition;
 CRITICAL_SECTION shutdown_mutex;
+
+// Global critical section for protecting rand() calls.
+// CRITICAL_SECTION rand_mutex;
+
+// Call this once at the start of your program.
+
+
+// // Call this once at program shutdown.
+// void deleteRandCS(void) {
+//     DeleteCriticalSection(&csRand);
+// }
+
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+void print_usage(const char *progname) {
+    printf("Usage: %s [-c <config_file>]\n", progname);
+    printf("  -c <config_file>  Specify the configuration file (optional).\n");
+    printf("  -h                Show this help message.\n");
+}
+
+//default config file
+char config_file_name[MAX_PATH] = "config.ini";
+
+bool parse_args(int argc, char *argv[]) {
+    char *config_file = NULL;  // Optional config file
+
+    // Iterate through arguments
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-c") == 0 && (i + 1) < argc) {
+            config_file = argv[++i];  // Get the next argument as the filename
+        } else if (strcmp(argv[i], "-h") == 0) {
+            print_usage(argv[0]);
+            return false;
+        } else {
+            printf("Unknown argument: %s\n", argv[i]);
+            print_usage(argv[0]);
+            return false;
+        }
+    }
+    return true;
+}
 
 static AppError init_app() {
     set_thread_label("MAIN");
@@ -21,7 +67,7 @@ static AppError init_app() {
     // Load configuration, if config not found use defaults
     // This will only return false if the defaults cannot be set
     // for some reason.
-    if (!load_config("config.ini", config_load_result)) {
+    if (!load_config(config_file_name, config_load_result)) {
         printf("Failed to initialize configuration: %s\n", config_load_result);
         return APP_CONFIG_ERROR;
     }
@@ -39,6 +85,9 @@ static AppError init_app() {
     }
     logger_log(LOG_INFO, "Configuration: %s", config_load_result);
     logger_log(LOG_INFO, "Logger: %s", logger_init_result);
+
+    /* Initialise sockets (WSAStartup on Windows, etc.) */
+    initialise_sockets();
     return APP_EXIT_SUCCESS;
 }
 
@@ -56,12 +105,14 @@ static AppError app_exit() {
 }
 
 int main(int argc, char *argv[]) {
-    (void)argc;
-    (void)argv;
+    if (!parse_args(argc, argv)) {
+        return APP_EXIT_FAILURE;
+    }
 
     // Initialize the shutdown condition and mutex
     InitializeConditionVariable(&shutdown_condition);
     InitializeCriticalSection(&shutdown_mutex);
+    // InitializeCriticalSection(&rand_mutex);
 
     int app_error = init_app();
     if (app_error != APP_EXIT_SUCCESS) {
@@ -79,13 +130,13 @@ int main(int argc, char *argv[]) {
 
     // Wait for XX seconds
 	// TODO get rid of this. It's just to test the logger queue
-    platform_sleep(10000); // takes milliseconds
+    sleep_ms(10000); // takes milliseconds
 
     // Request logger shutdown
     request_shutdown();
 
     // Wait for other threads to shut down gracefully
-    int timeout_ms = 5000; // 5 seconds timeout
+    int timeout_ms = 50000; // 5 seconds timeout
     if (!wait_for_shutdown(timeout_ms)) {
         // Forcefully terminate any remaining threads
         // This is platform-specific and should be handled carefully

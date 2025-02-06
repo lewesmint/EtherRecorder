@@ -20,27 +20,31 @@ void log_queue_init(LogQueue_T *queue) {
     queue->tail = 0;  
 }
 
-bool log_queue_push(LogQueue_T *log_queue, LogLevel level, const char *log_buffer) {
+bool log_queue_push(LogQueue_T *log_queue, const LogEntry_T *entry) {
+    if (!entry) {
+        return false; // Prevent null pointer access
+    }
+    if (entry->thread_label == NULL) {
+        return false; // Prevent logging of invalid thread label
+    }
+    long head = log_queue->head;
+    long next_head = (head + 1) % LOG_QUEUE_SIZE;
 
-    printf("log_queue_push\n");
-
-    LONG head = log_queue->head;
-    LONG next_head = (head + 1) % LOG_QUEUE_SIZE;
-
+    // Check if the queue is full
     if (next_head == log_queue->tail) {
-        // Queue is full, handle overflow
         logger_log(LOG_WARN, "Log queue overflow. Discarding oldest log entry.");
-        log_queue->tail = (log_queue->tail + 1) % LOG_QUEUE_SIZE; // Discard the oldest log entry
-        return false; // Indicate that the queue is full
+        InterlockedExchange(&log_queue->tail, (log_queue->tail + 1) % LOG_QUEUE_SIZE); // Discard oldest entry
     }
 
-    log_queue->entries[head].level = level;
-    strncpy(log_queue->entries[head].message, log_buffer, LOG_MSG_BUFFER_SIZE);
+    // Copy the pre-constructed entry into the queue
+    log_queue->entries[head] = *entry; // Struct assignment (safe and efficient)
 
     // Atomically update the head index
     InterlockedExchange(&log_queue->head, next_head);
-    return true; // Indicate success
+
+    return true; // Successfully added log entry
 }
+
 
 /**
  * @copydoc log_queue_pop
