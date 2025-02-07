@@ -7,7 +7,7 @@
             "request": "launch",
             "program": "${workspaceFolder}/ARM64/Debug/EtherRecorder.exe",
             "args": [],
-            "cwd": "${workspaceFolder}/EtherRecorder",
+            "cwd": "${workspaceFolder}",
             "preLaunchTask": "Build Debug",
             "console": "integratedTerminal"
         }

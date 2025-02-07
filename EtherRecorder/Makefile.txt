@@ -27,11 +27,11 @@ BUILD_TYPE ?= Debug
 # Output folder for the final .exe, e.g. WinArm64\Debug
 OUTDIR = $(ARCH)\$(BUILD_TYPE)
 # Folder for intermediate object files, e.g. EtherRecorder\WinArm64\Debug
-OBJDIR = $(PROJECT_NAME)\$(ARCH)\$(BUILD_TYPE)
+OBJDIR = $(ARCH)\$(BUILD_TYPE)
 
 # Source code and include path
-SRCDIR = $(PROJECT_NAME)\src
-INCDIR = $(PROJECT_NAME)\inc
+SRCDIR = src
+INCDIR = inc
 
 # MSVC compiler and flags (no /machine:... flags!)
 CC = cl
@@ -43,8 +43,15 @@ else
     RUNTIME_LIB = /MT
 endif
 
+# Linked libraries
+LIBS = shlwapi.lib ws2_32.lib bcrypt.lib 
+
+# Compiler flags (only for compilation, not linking)
 CFLAGS = /TC /std:c17 /W3 /Zi /I $(INCDIR) /D_CRT_SECURE_NO_WARNINGS $(RUNTIME_LIB)
-LDFLAGS = $(RUNTIME_LIB)
+
+# Linker flags (used only during linking, not compilation)
+LDFLAGS = $(RUNTIME_LIB) /DEBUG /Zi /Fd:$(OUTDIR)/EtherRecorder.pdb
+LINKFLAGS = /link /OUT:$(OUTDIR)/$(PROJECT_NAME).exe $(LIBS)
 
 # Find all .c files in SRCDIR
 SOURCES = $(wildcard $(SRCDIR)/*.c)
@@ -63,8 +70,8 @@ all: create_dirs $(OUTDIR)\$(PROJECT_NAME).exe
 # Create output and object directories if they don't exist
 ###############################################################################
 create_dirs:
-	if not exist "$(OUTDIR)" mkdir "$(OUTDIR)"
-	if not exist "$(OBJDIR)" mkdir "$(OBJDIR)"
+	@if not exist "$(OUTDIR)" mkdir "$(OUTDIR)"
+	@if not exist "$(OBJDIR)" mkdir "$(OBJDIR)"
 
 ###############################################################################
 # Linking: produce the final .exe
@@ -73,7 +80,7 @@ $(OUTDIR)\$(PROJECT_NAME).exe: $(OBJECTS)
 ifeq ($(VERBOSE),1)
 	@echo Linking $(PROJECT_NAME).exe into "$(OUTDIR)" ...
 endif
-	$(CC) $(LDFLAGS) /Fe$@ $(OBJECTS)
+	$(CC) $(OBJECTS) $(LDFLAGS) $(LINKFLAGS)
 ifeq ($(VERBOSE),1)
 	@echo Finished linking $(PROJECT_NAME).exe
 endif

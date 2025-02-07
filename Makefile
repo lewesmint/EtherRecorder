@@ -90,7 +90,8 @@ endif
 ###############################################################################
 $(OBJDIR)/%.obj: $(SRCDIR)/%.c | create_dirs
 ifeq ($(VERBOSE),1)
-	@echo Compiling $<
+	@echo SOURCES: $(SOURCES)
+	@echo HELLO Compiling $<
 endif
 	$(CC) $(CFLAGS) /c $< /Fo$@
 

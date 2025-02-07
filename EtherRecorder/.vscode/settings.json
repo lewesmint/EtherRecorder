@@ -1,0 +1,15 @@
+{
+    "terminal.integrated.defaultProfile.windows": "Command Prompt",
+    "makefile.buildLog": "build_log",
+    "makefile.makefilePath": "MakeWin.mak",
+    "makefile.launchConfigurations": [
+        {
+            "cwd": "c:\\code\\c_code\\EtherRecorder\\Win32\\Debug",
+            "binaryPath": "c:\\code\\c_code\\EtherRecorder\\Win32\\Debug\\EtherRecorder.exe",
+            "binaryArgs": []
+        }
+    ],
+    "files.associations": {
+        "client_manager.h": "c"
+    }
+}
