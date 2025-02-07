@@ -257,10 +257,10 @@ static void format_log_message(char *buffer, size_t buffer_size, LogLevel level,
  * @param level The log level of the message.
  * @param entry The formatted log message.
  */
-static void log_immediately(LogEntry_T *entry) {
+static void log_immediately(const LogEntry_T *entry) {
     lock_mutex(&logging_mutex);
-    char *message = entry->message;
-    char *thread_label = entry->thread_label;
+    const char *message = entry->message;
+    const char *thread_label = entry->thread_label;
 
     if (thread_label == NULL) {
         thread_label = get_thread_label();
@@ -337,7 +337,6 @@ static void log_immediately(LogEntry_T *entry) {
 void log_now(LogEntry_T *entry) {
     log_immediately(entry);
 }
-
 
 void logger_log(LogLevel level, const char *format, ...) {
     va_list args;

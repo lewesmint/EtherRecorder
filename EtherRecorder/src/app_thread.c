@@ -235,7 +235,11 @@ static ServerThreadArgs_T server_thread_args = {
 };
 
 static ClientThreadArgs_T client_thread_args = {
-    .client_hostname = "localhost",
+    // strncpy or equivalent must be used if this is overritten by a config
+    // or we could just use a pointer, as long we were using previously allocated static memory or
+    // we are aware of the dynamic meory for deallocation
+    .server_hostname = "127.0.0.2", // 127.0.0.0/8 are loopback adresses all pointing at the local host
+                                    // using 127.0.0.2 here just so we can tell if this gets modified
     .port = 4200,
     .is_tcp = true
 };
@@ -251,46 +255,46 @@ static AppThreadArgs_T all_threads[] = {
         .init_func = init_wait_for_logger,
         .exit_func = exit_stub
     },
-    {
-        .label = "SERVER",
-        // .func = server_thread_function,
-        .func = serverListenerThread,
-        .data = &server_thread_args,
-        .pre_create_func = pre_create_stub,
-        .post_create_func = post_create_stub,
-        .init_func = init_wait_for_logger,
-        .exit_func = exit_stub
+    // {
+    //     .label = "SERVER",
+    //     // .func = server_thread_function,
+    //     .func = serverListenerThread,
+    //     .data = &server_thread_args,
+    //     .pre_create_func = pre_create_stub,
+    //     .post_create_func = post_create_stub,
+    //     .init_func = init_wait_for_logger,
+    //     .exit_func = exit_stub
     },
-    {
-        .label = "GENERIC-1",
-        // .func = generic_thread_function,
-        .func = blank_thread_function,
-        .data = NULL,
-        .pre_create_func = pre_create_stub,
-        .post_create_func = post_create_stub,
-        .init_func = init_wait_for_logger,
-        .exit_func = exit_stub
-    },
-    {
-        .label = "GENERIC-2",
-        // .func = generic_thread_function,
-        .func = blank_thread_function,
-        .data = NULL,
-        .pre_create_func = pre_create_stub,
-        .post_create_func = post_create_stub,
-        .init_func = init_wait_for_logger,
-        .exit_func = exit_stub
-    },
-    {
-        .label = "GENERIC-3",
-        // .func = generic_thread_function,
-        .func = blank_thread_function,
-        .data = NULL,
-        .pre_create_func = pre_create_stub,
-        .post_create_func = post_create_stub,
-        .init_func = init_wait_for_logger,
-        .exit_func = exit_stub
-    },
+    // {
+    //     .label = "GENERIC-1",
+    //     // .func = generic_thread_function,
+    //     .func = blank_thread_function,
+    //     .data = NULL,
+    //     .pre_create_func = pre_create_stub,
+    //     .post_create_func = post_create_stub,
+    //     .init_func = init_wait_for_logger,
+    //     .exit_func = exit_stub
+    // },
+    // {
+    //     .label = "GENERIC-2",
+    //     // .func = generic_thread_function,
+    //     .func = blank_thread_function,
+    //     .data = NULL,
+    //     .pre_create_func = pre_create_stub,
+    //     .post_create_func = post_create_stub,
+    //     .init_func = init_wait_for_logger,
+    //     .exit_func = exit_stub
+    // },
+    // {
+    //     .label = "GENERIC-3",
+    //     // .func = generic_thread_function,
+    //     .func = blank_thread_function,
+    //     .data = NULL,
+    //     .pre_create_func = pre_create_stub,
+    //     .post_create_func = post_create_stub,
+    //     .init_func = init_wait_for_logger,
+    //     .exit_func = exit_stub
+    // },
     {
         .label = "LOGGER",
         .func = logger_thread_function,

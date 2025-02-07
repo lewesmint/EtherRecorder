@@ -33,6 +33,7 @@ int generateRandomData(DummyPayload* packet) {
     packet->start_marker = START_MARKER;
 
     // Choose a random number of blocks from MIN_BLOCKS to MAX_BLOCKS (inclusive)
+
     int numBlocks = MIN_BLOCKS + (platform_random() % (MAX_BLOCKS - MIN_BLOCKS + 1));
     // unsigned int random = 944;
     // if (rand_s(&random) != 0) {
@@ -422,9 +423,6 @@ int receive_all_data(SOCKET sock, void *data, int buffer_size, int is_tcp,
 /**
  * The main communication loop, ensuring full sends/receives.
  */
-/**
- * The main communication loop, ensuring full sends/receives.
- */
 void communication_loop(SOCKET sock, int is_server, int is_tcp, struct sockaddr_in *client_addr) {
     int addr_len = sizeof(struct sockaddr_in);
     bool valid_socket_connection = true;
@@ -446,8 +444,9 @@ void communication_loop(SOCKET sock, int is_server, int is_tcp, struct sockaddr_
                 close_socket(&sock);
                 break;
             }
-            logger_log(LOG_DEBUG, "Sleeping");
+            logger_log(LOG_DEBUG, "Sleeping in comms loop");
             sleep_ms(100);
+            logger_log(LOG_DEBUG, "Woken in comms loop");
         }
 
         DummyPayload receivePayload;

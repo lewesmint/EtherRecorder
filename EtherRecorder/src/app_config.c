@@ -65,6 +65,7 @@ bool load_config(const char *filename, char* log_result) {
         snprintf(log_result, LOG_MSG_BUFFER_SIZE, "Failed to resolve full path for: %s\n", filename);
         return false; 
     }
+    printf("Looking for config with path: %s\n", full_path);
     FILE *file = fopen(full_path, "r");
     if (!file) {
         snprintf(log_result, LOG_MSG_BUFFER_SIZE,

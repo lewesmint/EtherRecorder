@@ -46,6 +46,11 @@ bool parse_args(int argc, char *argv[]) {
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-c") == 0 && (i + 1) < argc) {
             config_file = argv[++i];  // Get the next argument as the filename
+            if (*config_file != '\0') {
+                strncpy(config_file_name, config_file, sizeof(config_file_name)-1);
+                config_file_name[sizeof(config_file_name)-1] = '\0';
+                return false;
+            }
         } else if (strcmp(argv[i], "-h") == 0) {
             print_usage(argv[0]);
             return false;
@@ -58,7 +63,34 @@ bool parse_args(int argc, char *argv[]) {
     return true;
 }
 
+int print_working_directory() {
+    char cwd[MAX_PATH];
+    if (getcwd(cwd, sizeof(cwd)) != NULL) {
+
+        DWORD dwRet = GetCurrentDirectory(MAX_PATH, cwd);
+
+        if (dwRet == 0)
+        {
+            // Handle an error from GetCurrentDirectory.
+            printf("GetCurrentDirectory failed (%d)\n", GetLastError());
+            return EXIT_FAILURE;
+        }
+        else if (dwRet > MAX_PATH) {
+            // The buffer is too small for the current directory.
+            printf("Buffer too small; need %d characters\n", dwRet);
+            return EXIT_FAILURE;
+        } else {
+            //Successfully got the current directory
+            printf("Current working directory: %s\n", cwd);
+            return EXIT_SUCCESS;
+        }
+    }
+}
+
 static AppError init_app() {
+    // dowed this work?
+    printf("This File: %s\n", __FILE__);
+    printf("This Line: %s\n", __LINE__);
     set_thread_label("MAIN");
     char config_load_result[LOG_MSG_BUFFER_SIZE];
     char logger_init_result[LOG_MSG_BUFFER_SIZE];
@@ -67,6 +99,7 @@ static AppError init_app() {
     // Load configuration, if config not found use defaults
     // This will only return false if the defaults cannot be set
     // for some reason.
+    print_current_working_directory();
     if (!load_config(config_file_name, config_load_result)) {
         printf("Failed to initialize configuration: %s\n", config_load_result);
         return APP_CONFIG_ERROR;
@@ -101,6 +134,7 @@ static AppError app_exit() {
     // if we're finished with the config, but it doesn't
     // use much memory so safe to do it here.
     free_config();
+    printf"Main thread finally exiting\n");
     return APP_EXIT_SUCCESS;
 }
 
@@ -128,16 +162,21 @@ int main(int argc, char *argv[]) {
     // blocking on logging.
     start_threads();
 
+    sleep(5000) // 5 seconds
+    logger_log(LOG_INFO, "Main thread sleeping for 5 seconds");
+
     // Wait for XX seconds
 	// TODO get rid of this. It's just to test the logger queue
-    sleep_ms(10000); // takes milliseconds
+    sleep_ms(13000); 
 
+    logger_log(LOG_INFO, "Main is requesting shutdown");
     // Request logger shutdown
     request_shutdown();
 
     // Wait for other threads to shut down gracefully
     int timeout_ms = 50000; // 5 seconds timeout
     if (!wait_for_shutdown(timeout_ms)) {
+        logger_log(LOG_ERROR, "Main threadwill try to kill stubborn threads");
         // Forcefully terminate any remaining threads
         // This is platform-specific and should be handled carefully
         // For example, on Windows, you can use TerminateThread (not recommended)
@@ -149,5 +188,6 @@ int main(int argc, char *argv[]) {
     // Shut down the logger thread
     logger_close();
 
+    printf("Main has closed the logger and will exit\n");
     return app_exit();
 }
