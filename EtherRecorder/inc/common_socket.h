@@ -1,10 +1,13 @@
+/**
+* @file common_socket.h
+* @brief Common socket functions.
+*/
+
 #ifndef COMMON_SOCKET_H
 #define COMMON_SOCKET_H
 
 #include "platform_sockets.h"
 #include <stdbool.h>
-
-// #define PORT 8080
 
 #ifdef __cplusplus
 extern "C" {

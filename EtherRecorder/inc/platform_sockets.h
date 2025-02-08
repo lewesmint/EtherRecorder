@@ -1,6 +1,6 @@
 /**
  * @file platform_sockets.h
- * @brief Platform-specific socket initialization and cleanup functions.
+ * @brief Platform-specific socket functions
  */
 
 #ifndef PLATFORM_SOCKETS_H
@@ -9,11 +9,8 @@
 // Platform-independent socket definitions
 #ifdef _WIN32
     #include <winsock2.h>
-    #include <ws2tcpip.h>
-    #define CLOSESOCKET closesocket
-    typedef int socklen_t;
-#else
-
+    //#include <ws2tcpip.h>
+#else // !_WIN32
     #include <sys/socket.h>
     #include <netinet/in.h>
     #include <arpa/inet.h>
@@ -23,15 +20,28 @@
     #include <unistd.h>
     #include <fcntl.h>
     #include <netdb.h> // For getaddrinfo and freeaddrinfo
-    typedef int SOCKET;
-    #define INVALID_SOCKET -1
-    #define SOCKET_ERROR -1
-    #define CLOSESOCKET close
 #endif
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#ifdef _WIN32
+    #define CLOSESOCKET closesocket
+    typedef int socklen_t;
+    #define PLATFORM_SOCKET_WOULDBLOCK WSAEWOULDBLOCK
+    #define PLATFORM_SOCKET_INPROGRESS WSAEINPROGRESS
+    #define GET_LAST_SOCKET_ERROR() WSAGetLastError()
+#else // !_WIN32
+    typedef int SOCKET;
+    #define INVALID_SOCKET -1
+    #define SOCKET_ERROR -1
+    #define CLOSESOCKET close
+    #define PLATFORM_SOCKET_WOULDBLOCK EWOULDBLOCK
+    #define PLATFORM_SOCKET_INPROGRESS EINPROGRESS
+    #define GET_LAST_SOCKET_ERROR() errno
+#endif // _WIN32
+
 
 typedef enum PlatformSocketError {
     PLATFORM_SOCKET_SUCCESS = 0,
@@ -48,27 +58,10 @@ typedef enum PlatformSocketError {
 } PlatformSocketError;
 
 
-#ifdef _WIN32
-    #define PLATFORM_SOCKET_WOULDBLOCK WSAEWOULDBLOCK
-    #define PLATFORM_SOCKET_INPROGRESS WSAEINPROGRESS
-#else
-    #define PLATFORM_SOCKET_WOULDBLOCK EWOULDBLOCK
-    #define PLATFORM_SOCKET_INPROGRESS EINPROGRESS
-#endif
-
-// Macros for socket error retrieval
-#ifdef _WIN32
-    #define GET_LAST_SOCKET_ERROR() WSAGetLastError()
-#else
-    #define GET_LAST_SOCKET_ERROR() errno
-#endif
-
-// Socket utility functions
-
 /**
- * @brief Initializes the socket library.
+ * @brief Initialises the socket library.
  *
- * On Windows, this function initializes the Winsock library. On other platforms,
+ * On Windows, this function initialises the Winsock library. On other platforms,
  * it does nothing.
  */
 void initialise_sockets(void);
@@ -83,16 +76,8 @@ void cleanup_sockets(void);
 
 int platform_getsockopt(int sock, int level, int optname, void *optval, socklen_t *optlen);
 
-/**
- * @brief Prints a socket error message.
- *
- * On Windows, this function prints the provided message followed by the last
- * Winsock error code. On other platforms, it uses `perror` to print the message
- * and the last error.
- *
- * @param msg The error message to print.
- */
-void print_socket_error(const char *msg);
+void get_socket_error_message(char* buffer, size_t buffer_size);
+
 
 /**
  * @brief Sets a socket to non-blocking mode.

@@ -38,8 +38,10 @@ void* serverListenerThread(void* arg) {
     while (!shutdown_flag) {
         SOCKET client_sock = accept(sock, (struct sockaddr *)&client_addr, &client_len);
         if (client_sock == INVALID_SOCKET) {
-            if (shutdown_flag) break;  // Graceful shutdown
-            print_socket_error("Accept failed");
+            if (shutdown_flag)
+                break;  // Graceful shutdown
+
+            logger_log(LOG_ERROR, "Accept failed.");
             continue;
         }
         logger_log(LOG_INFO, "Client connected.");

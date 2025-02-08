@@ -1,10 +1,16 @@
+/**
+* @file server_manager.h
+ * @brief Header file for server_manager.c.
+ * @details Header file for server_manager.c.
+ * 
+ */
 #ifndef SERVER_MANAGER_H
 #define SERVER_MANAGER_H
 
 #include <stdbool.h>
 
 /**
- * @brief Structure to hold servr maanager thread arguments and functions.
+ * @brief Structure to hold server manager thread arguments and functions.
  */
 typedef struct ServerThreadArgs_T {
     // const char *label;                  ///< Label for the thread (e.g., "CLIENT" or "SERVER")
@@ -13,10 +19,10 @@ typedef struct ServerThreadArgs_T {
     void *data;                          ///< Server Thread-specific data
     // PreCreateFunc_T pre_create_func;    ///< Pre-create function
     // PostCreateFunc_T post_create_func;  ///< Post-create function
-    // InitFunc_T init_func;               ///< Initialization function
+    // InitFunc_T init_func;               ///< Initialisation function
     // ExitFunc_T exit_func;               ///< Exit function
     int port;                            ///< Port number
-    bool is_tcp;                         ///< Procoeol is TCP (else UDP)
+    bool is_tcp;                         ///< Protocol is TCP (else UDP)
 } ServerThreadArgs_T;
 
 void* serverListenerThread(void* arg);

@@ -3,14 +3,12 @@
 
 #include "app_config.h"
 #include "platform_utils.h"
-#include "platform_mutex.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 #include <ctype.h>
-#include <limits.h>
 
 #include "logger.h"
 
@@ -28,27 +26,44 @@ typedef struct ConfigEntry {
 
 static ConfigEntry *config_entries = NULL;
 
-static void trim_whitespace(char *str) {
-    char *end;
+/**
+ * @brief Trim leading and trailing whitespace from a string in place.
+ * @param str The string to be trimmed.
+ */
+static void trim_whitespace(char* str) {
+    char* start = str;
+    char* end;
+
+    if (!str || *str == '\0') return;
 
     // Trim leading space
-    while (isspace((unsigned char)*str)) str++;
+    while (isspace((unsigned char)*start)) start++;
 
-    if (*str == 0) return;
+    // If the string was entirely spaces, return an empty string
+    if (*start == '\0') {
+        *str = '\0';
+        return;
+    }
 
     // Trim trailing space
-    end = str + strlen(str) - 1;
-    while (end > str && isspace((unsigned char)*end)) end--;
+    end = start + strlen(start) - 1;
+    while (end > start && isspace((unsigned char)*end)) end--;
 
     // Write new null terminator
-    *(end + 1) = 0;
+    *(end + 1) = '\0';
+
+    // Move the trimmed content to the beginning of str
+    if (start != str) {
+        memmove(str, start, end - start + 2);  // Include null terminator
+    }
 }
+
 
 static ConfigEntry* find_config_entry(const char *section, const char *key) {
     ConfigEntry *entry = config_entries;
     while (entry) {
-        if (platform_strcasecmp(entry->section, section) == 0 &&
-            platform_strcasecmp(entry->key, key) == 0) {
+        if (str_cmp_nocase(entry->section, section) == 0 &&
+            str_cmp_nocase(entry->key, key) == 0) {
             return entry;
         }
         entry = entry->next;
@@ -57,22 +72,46 @@ static ConfigEntry* find_config_entry(const char *section, const char *key) {
 }
 
 /**
+ * @brief Removes comments (`;` or `#`) from a line, while preserving quoted values.
+ * @param str The input line.
+ */
+static void trim_comments(char* str) {
+    bool in_quotes = false;
+    char* p = str;
+
+    while (*p) {
+        if (*p == '"' || *p == '\'') {
+            in_quotes = !in_quotes; // Toggle quote state
+        }
+        else if (!in_quotes && (*p == ';' || *p == '#')) {
+            *p = '\0';  // Null-terminate to remove comment
+            break;
+        }
+        p++;
+    }
+    trim_whitespace(str); // Ensure no trailing spaces remain
+}
+
+
+/**
  * @copydoc load_config
  */
-bool load_config(const char *filename, char* log_result) {
+bool load_config(const char* filename, char* log_result) {
     char full_path[MAX_PATH];
     if (!resolve_full_path(filename, full_path, sizeof(full_path))) {
         snprintf(log_result, LOG_MSG_BUFFER_SIZE, "Failed to resolve full path for: %s\n", filename);
-        return false; 
+        return false;
     }
+
     printf("Looking for config with path: %s\n", full_path);
-    FILE *file = fopen(full_path, "r");
+    FILE* file = fopen(full_path, "r");
     if (!file) {
         snprintf(log_result, LOG_MSG_BUFFER_SIZE,
-                 "Failed to load configuration file: %s\n"
-                 "Default settings will be used\n", full_path);
+            "Failed to load configuration file: %s\n"
+            "Default settings will be used\n", full_path);
         return false;
-    } else {
+    }
+    else {
         snprintf(log_result, LOG_MSG_BUFFER_SIZE, "Loading configuration file: %s\n", full_path);
     }
 
@@ -81,26 +120,28 @@ bool load_config(const char *filename, char* log_result) {
 
     while (fgets(line, sizeof(line), file)) {
         trim_whitespace(line);
+        trim_comments(line);  // Remove inline comments
 
         if (line[0] == '\0') continue; // Skip empty lines
-        if (line[0] == ';' || line[0] == '#') continue; // Skip comments
+
         if (line[0] == '[') {
-            char *end = strchr(line, ']');
+            char* end = strchr(line, ']');
             if (end) {
                 *end = '\0';
                 strncpy(current_section, line + 1, sizeof(current_section) - 1);
                 current_section[sizeof(current_section) - 1] = '\0';
             }
-        } else {
-            char *equals = strchr(line, '=');
+        }
+        else {
+            char* equals = strchr(line, '=');
             if (equals) {
                 *equals = '\0';
-                char *key = line;
-                char *value = equals + 1;
+                char* key = line;
+                char* value = equals + 1;
                 trim_whitespace(key);
                 trim_whitespace(value);
 
-                ConfigEntry *entry = (ConfigEntry *)malloc(sizeof(ConfigEntry));
+                ConfigEntry* entry = (ConfigEntry*)malloc(sizeof(ConfigEntry));
                 strncpy(entry->section, current_section, sizeof(entry->section) - 1);
                 strncpy(entry->key, key, sizeof(entry->key) - 1);
                 strncpy(entry->value, value, sizeof(entry->value) - 1);
@@ -109,13 +150,17 @@ bool load_config(const char *filename, char* log_result) {
                 entry->value[sizeof(entry->value) - 1] = '\0';
                 entry->next = config_entries;
                 config_entries = entry;
+
+                // Log the stored configuration entry
+                printf("Stored config entry: Section [%s], Key [%s], Value [%s]\n", entry->section, entry->key, entry->value);
             }
         }
     }
 
     fclose(file);
-    return true; // Return 1 to indicate success
+    return true; // Indicate success
 }
+
 
 /**
  * @brief Retrieves a configuration value as a string.
@@ -140,18 +185,28 @@ int get_config_int(const char *section, const char *key, int default_value) {
 /**
  * @copydoc get_config_bool
  */
-bool get_config_bool(const char *section, const char *key, bool default_value) {
-    const char *value = get_config_string(section, key, NULL);
+bool get_config_bool(const char* section, const char* key, bool default_value) {
+    const char* value = get_config_string(section, key, NULL);
     if (!value) return default_value;
-    return (platform_strcasecmp(value, "true") == 0 || strcmp(value, "1") == 0);
-}
 
-/**
- * @copydoc get_config_float
- */
-double get_config_float(const char *section, const char *key, double default_value) {
-    const char *value = get_config_string(section, key, NULL);
-    return value ? atof(value) : default_value;
+    /* Check for truthy values */
+    if (str_cmp_nocase(value, "true") == 0 ||
+        str_cmp_nocase(value, "yes") == 0 ||
+        str_cmp_nocase(value, "on") == 0 ||
+        (value[0] == '1' && value[1] == '\0')) {
+        return true;
+    }
+
+    /* Check for falsy values */
+    if (str_cmp_nocase(value, "false") == 0 ||
+        str_cmp_nocase(value, "no") == 0 ||
+        str_cmp_nocase(value, "off") == 0 ||
+        (value[0] == '0' && value[1] == '\0')) {
+        return false;
+    }
+
+    /* Unrecognized values default */
+    return default_value;
 }
 
 /**

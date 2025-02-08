@@ -1,26 +1,17 @@
 #include "app_thread.h"
 
-#include <string.h>
+
 #include <stdbool.h>
 #include <windows.h>
 #include <stdio.h>
 
 #include "platform_utils.h"
 #include "platform_threads.h"
-#include "app_config.h"
 #include "log_queue.h"
 #include "logger.h"
-#include "platform_mutex.h"
 #include "client_manager.h"
 #include "server_manager.h"
 
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <pthread.h>
-#include <time.h>
-#include <errno.h>
-#endif
 
 THREAD_LOCAL static const char *thread_label = NULL;
 
@@ -162,16 +153,12 @@ void* logger_thread_function(void* arg) {
     LogEntry_T entry;
     bool running = true; // Flag to handle graceful shutdown later
 
-    // printf("Currently this is deliberately running the logger queue processing slowly to test queueing\n");
-    // not anymore ... but we're still testing, so don't remove this just yet
     while (running) {
-        // while (log_queue_pop_debug(&log_queue, &entry)) {
-        while (log_queue_pop(&log_queue, &entry)) {
-            if (*entry.thread_label == '\0') {
+        while (log_queue_pop(&global_log_queue, &entry)) {
+
+            if (*entry.thread_label == '\0')
                 printf("Logger thread processing log from: NULL\n");
-            } else {
-                printf("Logger thread processing log from: %s\n", entry.thread_label);
-            }
+
             log_now(&entry);
             // sleep_ms(40);
         }
@@ -264,7 +251,7 @@ static AppThreadArgs_T all_threads[] = {
     //     .post_create_func = post_create_stub,
     //     .init_func = init_wait_for_logger,
     //     .exit_func = exit_stub
-    },
+    // },
     // {
     //     .label = "GENERIC-1",
     //     // .func = generic_thread_function,
@@ -363,7 +350,7 @@ static void* init_wait_for_logger(void* arg) {
         }
     }
     LeaveCriticalSection(&logger_thread_mutex_in_app_thread);
-    // Initialize the thread logger    
+    // Initialise the thread logger    
     set_thread_log_file_from_config(thread_info->label);
     logger_log(LOG_INFO, "Thread %s initialised", thread_info->label);
 
@@ -371,7 +358,7 @@ static void* init_wait_for_logger(void* arg) {
 }
 
 void start_threads(void) {
-    // Initialize the logger condition and mutex
+    // Initialise the logger condition and mutex
     InitializeConditionVariable(&logger_thread_condition);
     InitializeCriticalSection(&logger_thread_mutex_in_app_thread);
 

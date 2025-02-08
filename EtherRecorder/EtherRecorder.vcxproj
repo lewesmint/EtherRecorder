@@ -48,7 +48,6 @@
     <ClInclude Include="inc\client_manager.h" />
     <ClInclude Include="inc\common_socket.h" />
     <ClInclude Include="inc\common_winsock.h" />
-    <ClInclude Include="inc\config.h" />
     <ClInclude Include="inc\logger.h" />
     <ClInclude Include="inc\log_queue.h" />
     <ClInclude Include="inc\platform_mutex.h" />
@@ -56,6 +55,9 @@
     <ClInclude Include="inc\platform_threads.h" />
     <ClInclude Include="inc\platform_utils.h" />
     <ClInclude Include="inc\server_manager.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\OLD_config.ini" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>

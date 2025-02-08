@@ -1,3 +1,8 @@
+/**
+* @file client_manager.h
+* @brief Client manager thread functions.
+* 
+*/
 #ifndef CLIENT_MANAGER_H
 #define CLIENT_MANAGER_H
 
@@ -13,7 +18,7 @@ typedef struct ClientThreadArgs_T {
     void *data;                          ///< Server Thread-specific data
     // PreCreateFunc_T pre_create_func;    ///< Pre-create function
     // PostCreateFunc_T post_create_func;  ///< Post-create function
-    // InitFunc_T init_func;               ///< Initialization function
+    // InitFunc_T init_func;               ///< Initialisation function
     // ExitFunc_T exit_func;               ///< Exit function
     char server_hostname[100];                 ///< Server hostname or IP address
     int port;                            ///< Port number

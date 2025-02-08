@@ -8,30 +8,34 @@
 #include <errno.h>
 
 #ifdef _WIN32
-#include <windows.h>
-#include <direct.h>
-#include <shlwapi.h>
-// it is necessary to link with shlwapi.lib,
-// but it is done in the project file. So pragma not required
-// #pragma comment(lib, "shlwapi.lib")
-#define platform_mkdir(path) _mkdir(path)
-#else
-#include <pthread.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <libgen.h>
-#include <limits.h>
-#include <strings.h>
-#define platform_mkdir(path) mkdir(path, 0755)
-#endif
+    #include <windows.h>
+    #include <direct.h>
+    // #include <shlwapi.h>
+    //// it is necessary to link with shlwapi.lib,
+    //// but it is done in the project file. So pragma not required
+    //// #pragma comment(lib, "shlwapi.lib")
+#else // !_WIN32
+    #include <pthread.h>
+    #include <unistd.h>
+    #include <sys/stat.h>
+    #include <libgen.h>
+    #include <limits.h>
+    #include <strings.h>
+#endif // _WIN32
 
 #ifdef _WIN32
-const char PATH_SEPARATOR = '\\';
-#else
-const char PATH_SEPARATOR = '/'
-#endif
+    #define platform_mkdir(path) _mkdir(path)
+    const char PATH_SEPARATOR = '\\';
+#else // !_WIN32
+    #define platform_mkdir(path) mkdir(path, 0755)
+    const char PATH_SEPARATOR = '/'
+#endif // _WIN32
 
-extern CRITICAL_SECTION rand_mutex;
+// extern CRITICAL_SECTION rand_mutex;
+
+void get_high_resolution_timestamp(LARGE_INTEGER* timestamp) {
+    QueryPerformanceCounter(timestamp);
+}
 
 uint64_t platform_strtoull(const char* str, char** endptr, int base) {
     return strtoull(str, endptr, base);
@@ -61,12 +65,15 @@ void unlock_mutex(PlatformMutex_T* mutex) {
     platform_mutex_unlock(mutex);
 }
 
-// int platform_rand() {
-//     EnterCriticalSection(&rand_mutex);
-//     int result = rand();
-//     LeaveCriticalSection(&rand_mutex);
-//     return result;
-// }
+
+char* get_cwd(char* buffer, int max_length) {
+#ifdef _WIN32
+    return _getcwd(buffer, max_length);
+#else
+    return getcwd(buffer, max_length);
+#endif
+}
+
 
 void stream_print(FILE* stream, const char* format, ...) {
     char buffer[1024];
@@ -175,7 +182,7 @@ bool resolve_full_path(const char* filename, char* full_path, size_t size) {
 /**
  * @brief Cross-platform implementation of strcasecmp()
  */
-int platform_strcasecmp(const char *s1, const char *s2) {
+int str_cmp_nocase(const char *s1, const char *s2) {
     while (*s1 && *s2) {
         char c1 = tolower((unsigned char)*s1);
         char c2 = tolower((unsigned char)*s2);
@@ -224,7 +231,7 @@ uint32_t platform_random() {
     static __thread unsigned int seed = 0;
     if (seed == 0) seed = time(NULL) ^ (uintptr_t)&seed;  // Thread-safe seed
     random_number = rand_r(&seed);
-#endif
+#endif // _WIN32
 
     return random_number;
 }

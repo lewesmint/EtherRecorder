@@ -1,19 +1,31 @@
+/**
+* @file platform_utils.h
+* @brief Platform-specific utility functions.
+* 
+*/
 #ifndef PLATFORM_UTILS_H
 #define PLATFORM_UTILS_H
 
 #include <stdio.h>
-#include <stdlib.h>
-#include <time.h>
-#include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <stddef.h>
-
-#include "platform_mutex.h"
 
 #ifdef _WIN32
     #include <windows.h>
-    #include <bcrypt.h>
+#else // !_WIN32
+    #include <fcntl.h>
+    #include <unistd.h>
+    #include <sys/random.h>
+    #include <unistd.h> // For getcwd on non-Windows platforms
+#endif // _WIN32
+
+#include "platform_mutex.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#ifdef _WIN32
     #define sleep(x) Sleep(1000 * (x))
     #ifndef PATH_MAX
         #define PATH_MAX MAX_PATH
@@ -22,12 +34,7 @@
     #ifndef MAX_PATH
         #define MAX_PATH PATH_MAX
     #endif // MAX_PATH
-    #include <stdlib.h>
-    #include <fcntl.h>
-    #include <unistd.h>
-    #include <sys/random.h>
 #endif // _WIN32
-
 
 /*
  * Extern declaration of a platform-specific path separator.
@@ -139,10 +146,17 @@ bool resolve_full_path(const char* filename, char* full_path, size_t size);
  * @return 0 if the strings are equal (ignoring case), a negative value if s1 < s2, 
  *         and a positive value if s1 > s2.
  */
-int platform_strcasecmp(const char *s1, const char *s2);
+int str_cmp_nocase(const char *s1, const char *s2);
 
 uint32_t platform_random();
 uint32_t platform_random_range(uint32_t min, uint32_t max);
+
+char* get_cwd(char* buffer, int max_length);
+void get_high_resolution_timestamp(LARGE_INTEGER* timestamp);
+
+#ifdef __cplusplus
+}
+#endif // __cplusplus
 
 
 #endif // PLATFORM_UTILS_H

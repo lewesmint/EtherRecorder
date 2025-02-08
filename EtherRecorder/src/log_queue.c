@@ -1,16 +1,16 @@
 #include "log_queue.h"
 #include "logger.h"
-#include "platform_mutex.h"
-
-#include <string.h>
-#include <stdio.h>
+//#include "platform_mutex.h"
+//
+//#include <string.h>
+//#include <stdio.h>
 #include <windows.h> // Include Windows API for atomic operations
 
-#include "platform_threads.h"
-#include "platform_utils.h"
-#include "app_thread.h" // Include the app_thread header
+//#include "platform_threads.h"
+//#include "platform_utils.h"
+//#include "app_thread.h" // Include the app_thread header
 
-LogQueue_T log_queue; // Define the log queue
+LogQueue_T global_log_queue; // Define the log queue
 
 /**
  * @copydoc log_queue_init
@@ -32,7 +32,11 @@ bool log_queue_push(LogQueue_T *log_queue, const LogEntry_T *entry) {
 
     // Check if the queue is full
     if (next_head == log_queue->tail) {
-        logger_log(LOG_WARN, "Log queue overflow. Discarding oldest log entry.");
+        // calling logger_log would be recursive, and lead to probable stack overflow
+
+        LogEntry_T entry;
+        create_log_entry(&entry, LOG_ERROR, "Log queue overflow. Discarding oldest log entry.");
+        log_now(&entry);
         InterlockedExchange(&log_queue->tail, (log_queue->tail + 1) % LOG_QUEUE_SIZE); // Discard oldest entry
     }
 
@@ -64,20 +68,4 @@ bool log_queue_pop(LogQueue_T *queue, LogEntry_T *entry) {
     return true;
 }
 
-bool log_queue_pop_debug(LogQueue_T *queue, LogEntry_T *entry) {
-    LONG tail = queue->tail;
-
-    printf("log_queue_pop_debug (deliberately slow) Queue size: %ld, head: %ld, tail: %ld\n", queue->head - tail, queue->head, tail);
-
-    if (tail == queue->head) {
-        // Queue is empty
-        return false;
-    }
-
-    *entry = queue->entries[tail];
-
-    // Atomically update the tail index
-    InterlockedExchange(&queue->tail, (tail + 1) % LOG_QUEUE_SIZE);
-    return true;
-}
 

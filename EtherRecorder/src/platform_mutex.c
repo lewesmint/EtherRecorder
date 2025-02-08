@@ -2,7 +2,15 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#else
+#include <pthread.h>
+#endif
 
+/*
+ * Platform-specific mutex implementation.
+ */
+
+#ifdef _WIN32
 /*
  * Detect MSVC via _MSC_VER. Even if MSVC sets __STDC_VERSION__ to 201112L,
  * it may not correctly handle _Static_assert(cond, "string") in C mode.
@@ -13,9 +21,9 @@
     #define STATIC_ASSERT(cond, msg) typedef char static_assertion_##msg[(cond) ? 1 : -1]
 #elif defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
     #define STATIC_ASSERT(cond, msg) _Static_assert(cond, msg)
-#else
+#else // Fallback to negative array-size trick
     #define STATIC_ASSERT(cond, msg) typedef char static_assertion_##msg[(cond) ? 1 : -1]
-#endif
+#endif // _MSC_VER
 
 /*
  * Ensure the fixed-size buffers in platform_mutex.h are big enough to hold
@@ -94,9 +102,8 @@ int platform_cond_destroy(PlatformCondition_T *cond) {
     return (cond ? 0 : -1);
 }
 
-#else /* ---------------------- POSIX Implementation ---------------------- */
-
-#include <pthread.h>
+#else // !_WIN32
+/* ---------------------- POSIX Implementation ---------------------- */
 
 /* For POSIX systems (Linux, macOS, etc.), we can rely on _Static_assert. */
 _Static_assert(sizeof(pthread_mutex_t) <= PLATFORM_MUTEX_STORAGE_SIZE,
@@ -163,4 +170,4 @@ int platform_cond_destroy(PlatformCondition_T *cond) {
     return pthread_cond_destroy(posix_cond(cond));
 }
 
-#endif
+#endif // _WIN32

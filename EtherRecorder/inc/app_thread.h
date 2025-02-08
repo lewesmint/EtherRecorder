@@ -1,3 +1,11 @@
+/**
+* @file app_thread.h
+* @brief Thread management functions.
+*
+*This file contains the functions to manage threads.
+*
+*/
+
 #ifndef APP_THREAD_H
 #define APP_THREAD_H
 
@@ -5,6 +13,11 @@
 #include "logger.h"
 #include <stdbool.h>
 #include <windows.h>
+
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 
 extern CONDITION_VARIABLE shutdown_condition;
@@ -28,7 +41,7 @@ typedef void* (*PreCreateFunc_T)(void* arg);
 typedef void* (*PostCreateFunc_T)(void* arg);
 
 /**
- * @brief Function pointer type for initialization functions.
+ * @brief Function pointer type for initialisation functions.
  * @param arg Argument to the function.
  * @return Pointer to the result.
  */
@@ -45,14 +58,14 @@ typedef void* (*ExitFunc_T)(void* arg);
  * @brief Structure to hold thread arguments and functions.
  */
 typedef struct AppThreadArgs_T {
-    const char *label;                  ///< Label for the thread (e.g., "CLIENT" or "SERVER")
-    ThreadFunc_T func;                  ///< Actual function to execute
-    PlatformThread_T thread_id;         ///< Thread ID
-    void *data;                         ///< Thread-specific data
-    PreCreateFunc_T pre_create_func;    ///< Pre-create function
-    PostCreateFunc_T post_create_func;  ///< Post-create function
-    InitFunc_T init_func;               ///< Initialization function
-    ExitFunc_T exit_func;               ///< Exit function
+    const char label[THREAD_LABEL_SIZE]; ///< Label for the thread (e.g., "CLIENT" or "SERVER")
+    ThreadFunc_T func;                   ///< Actual function to execute
+    PlatformThread_T thread_id;          ///< Thread ID
+    void *data;                          ///< Thread-specific data
+    PreCreateFunc_T pre_create_func;     ///< Pre-create function
+    PostCreateFunc_T post_create_func;   ///< Post-create function
+    InitFunc_T init_func;                ///< Initialisation function
+    ExitFunc_T exit_func;                ///< Exit function
 } AppThreadArgs_T;
 
 /**
@@ -72,5 +85,9 @@ const char* get_thread_label();
  * @param label The label to set.
  */
 void set_thread_label(const char *label);
+
+#ifdef __cplusplus
+}
+#endif // __cplusplus
 
 #endif // APP_THREAD_H

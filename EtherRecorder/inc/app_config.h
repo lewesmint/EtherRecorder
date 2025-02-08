@@ -1,17 +1,14 @@
+/**
+ * @file config.h
+ * @brief Configuration system for loading and retrieving configuration values.
+ */
+
 #ifndef APP_CONFIG_H
 #define APP_CONFIG_H
 
 #include <stdbool.h>
 #include <stdint.h>
 
-/**
- * @file config.h
- * @brief Configuration system for loading and retrieving configuration values.
- */
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /**
  * @brief Loads the configuration from a file.
@@ -76,9 +73,5 @@ uint64_t get_config_hex(const char *section, const char *key, uint64_t default_v
  * @brief Frees the memory allocated for the configuration entries.
  */
 void free_config();
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif // APP_CCONFIG_H

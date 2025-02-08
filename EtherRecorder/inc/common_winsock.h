@@ -1,3 +1,8 @@
+/**
+* @file common_winsock.h
+* 
+* @brief Common functions and constants for WinSock applications
+*/
 #ifndef COMMON_WINSOCK_H
 #define COMMON_WINSOCK_H
 

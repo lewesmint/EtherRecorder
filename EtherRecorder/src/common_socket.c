@@ -1,4 +1,8 @@
 #include "common_socket.h"
+
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
 #include "platform_utils.h"
 #include "logger.h"
 
@@ -193,32 +197,32 @@ PlatformSocketError connect_with_timeout(SOCKET sock, struct sockaddr_in *server
 }
 
 
-/**
- * Sends data reliably, ensuring the full buffer is sent over TCP.
- */
-int send_all_data(SOCKET sock, void *data, int buffer_size, int is_tcp, struct sockaddr_in *client_addr, socklen_t addr_len) {
-    // hex_dump(data, buffer_size);
-
-    int total_sent = 0;
-
-    if (is_tcp) {
-        while (total_sent < buffer_size) {
-            int bytes_sent = send(sock, ((char *)data) + total_sent, buffer_size - total_sent, 0);
-            if (bytes_sent <= 0) {
-                print_socket_error("Error on send");
-                return -1;
-            }
-            total_sent += bytes_sent;
-        }
-    } else {
-        if (sendto(sock, data, buffer_size, 0, (struct sockaddr *)client_addr, addr_len) <= 0) {
-            print_socket_error("Error on sendto");
-            return -1;
-        }
-    }
-
-    return 0;
-}
+///**
+// * Sends data reliably, ensuring the full buffer is sent over TCP.
+// */
+//int send_all_data(SOCKET sock, void *data, int buffer_size, int is_tcp, struct sockaddr_in *client_addr, socklen_t addr_len) {
+//    // hex_dump(data, buffer_size);
+//
+//    int total_sent = 0;
+//
+//    if (is_tcp) {
+//        while (total_sent < buffer_size) {
+//            int bytes_sent = send(sock, ((char *)data) + total_sent, buffer_size - total_sent, 0);
+//            if (bytes_sent <= 0) {
+//                print_socket_error("Error on send");
+//                return -1;
+//            }
+//            total_sent += bytes_sent;
+//        }
+//    } else {
+//        if (sendto(sock, data, buffer_size, 0, (struct sockaddr *)client_addr, addr_len) <= 0) {
+//            print_socket_error("Error on sendto");
+//            return -1;
+//        }
+//    }
+//
+//    return 0;
+//}
 
 // Include your socket headers here (e.g. winsock2.h or sys/socket.h, etc.)
 
@@ -404,21 +408,21 @@ int process_tcp_stream(SOCKET sock, void *out_buffer, int out_buffer_size) {
 /**
  * Receives data reliably, ensuring no partial reads for TCP.
  */
-int receive_all_data(SOCKET sock, void *data, int buffer_size, int is_tcp,
-                     struct sockaddr_in *client_addr, socklen_t *addr_len) {
-    if (is_tcp) {
-        // For TCP, process_tcp_stream now returns a complete packet in the provided buffer.
-        int total_received = process_tcp_stream(sock, data, buffer_size);
-        return total_received;
-    } else {
-        int bytes_received = recvfrom(sock, data, buffer_size, 0, (struct sockaddr *)client_addr, addr_len);
-        if (bytes_received <= 0) {
-            print_socket_error("Error on recvfrom");
-            return -1;
-        }
-        return bytes_received;
-    }
-}
+//int receive_all_data(SOCKET sock, void *data, int buffer_size, int is_tcp,
+//                     struct sockaddr_in *client_addr, socklen_t *addr_len) {
+//    if (is_tcp) {
+//        // For TCP, process_tcp_stream now returns a complete packet in the provided buffer.
+//        int total_received = process_tcp_stream(sock, data, buffer_size);
+//        return total_received;
+//    } else {
+//        int bytes_received = recvfrom(sock, data, buffer_size, 0, (struct sockaddr *)client_addr, addr_len);
+//        if (bytes_received <= 0) {
+//            print_socket_error("Error on recvfrom");
+//            return -1;
+//        }
+//        return bytes_received;
+//    }
+//}
 
 /**
  * The main communication loop, ensuring full sends/receives.
@@ -438,12 +442,12 @@ void communication_loop(SOCKET sock, int is_server, int is_tcp, struct sockaddr_
         int send_buffer_len = generateRandomData(&sendPayload);
         if (send_buffer_len > 0) {
             logger_log(LOG_DEBUG, "Sending %d bytes of data.", send_buffer_len);
-            if (send_all_data(sock, &sendPayload, send_buffer_len, is_tcp, client_addr, addr_len) != 0) {
-                logger_log(LOG_ERROR, "Send error. Exiting loop.");
-                valid_socket_connection = false;
-                close_socket(&sock);
-                break;
-            }
+            //if (send_all_data(sock, &sendPayload, send_buffer_len, is_tcp, client_addr, addr_len) != 0) {
+            //    logger_log(LOG_ERROR, "Send error. Exiting loop.");
+            //    valid_socket_connection = false;
+            //    close_socket(&sock);
+            //    break;
+            //}
             logger_log(LOG_DEBUG, "Sleeping in comms loop");
             sleep_ms(100);
             logger_log(LOG_DEBUG, "Woken in comms loop");
@@ -452,14 +456,14 @@ void communication_loop(SOCKET sock, int is_server, int is_tcp, struct sockaddr_
         DummyPayload receivePayload;
         int receive_buffer_len = sizeof(DummyPayload);
         logger_log(LOG_DEBUG, "Entering receive_all_data");
-        int packet_size = receive_all_data(sock, &receivePayload, receive_buffer_len, is_tcp, client_addr, &addr_len);
-        if (packet_size <= 0) {
-            logger_log(LOG_ERROR, "Receive error. Exiting loop.");
-            valid_socket_connection = false;
-            close_socket(&sock);
-            break;
-        }
-        logger_log(LOG_DEBUG, "Received complete packet (%d bytes)", packet_size);
+        //int packet_size = receive_all_data(sock, &receivePayload, receive_buffer_len, is_tcp, client_addr, &addr_len);
+        //if (packet_size <= 0) {
+        //    logger_log(LOG_ERROR, "Receive error. Exiting loop.");
+        //    valid_socket_connection = false;
+        //    close_socket(&sock);
+        //    break;
+        //}
+//        logger_log(LOG_DEBUG, "Received complete packet (%d bytes)", packet_size);
 
         // Extract payload length from the received packet.
         unsigned int payload_length = 0;

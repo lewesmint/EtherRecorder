@@ -56,9 +56,6 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="inc\config.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="inc\logger.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -98,5 +95,10 @@
     <ClInclude Include="inc\server_manager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\OLD_config.ini">
+      <Filter>Resource Files</Filter>
+    </None>
   </ItemGroup>
 </Project>

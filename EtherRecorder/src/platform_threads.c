@@ -27,7 +27,7 @@ int platform_thread_join(PlatformThread_T thread, void **retval) {
     return (WaitForSingleObject(thread, INFINITE) == WAIT_OBJECT_0) ? 0 : -1;
 }
 
-#else
+#else //!_WIN32
 
 int platform_thread_create(PlatformThread_T *thread, ThreadFunc_T func, void *arg) {
     return pthread_create(thread, NULL, func, arg);
@@ -37,4 +37,4 @@ int platform_thread_join(PlatformThread_T thread, void **retval) {
     return pthread_join(thread, retval);
 }
 
-#endif
+#endif // _WIN32

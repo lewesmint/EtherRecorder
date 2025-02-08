@@ -1,6 +1,7 @@
+
 /**
  * @file platform_sockets.c
- * @brief Platform-specific socket initialization and cleanup functions.
+ * @brief Platform-specific socket initialisation and cleanup functions.
  */
 
 #include "platform_sockets.h"
@@ -14,14 +15,10 @@
 #include <unistd.h>
 #endif
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /**
- * @brief Initializes the socket library.
+ * @brief Initialises the socket library.
  *
- * On Windows, this function initializes the Winsock library. On other platforms,
+ * On Windows, this function initialises the Winsock library. On other platforms,
  * it does nothing.
  */
 void initialise_sockets(void) {
@@ -58,24 +55,6 @@ int platform_getsockopt(int sock, int level, int optname, void *optval, socklen_
 #else
     // On Linux, directly use getsockopt
     return getsockopt(sock, level, optname, optval, optlen);
-#endif
-}
-
-
-/**
- * @brief Prints a socket error message.
- *
- * On Windows, this function prints the provided message followed by the last
- * Winsock error code. On other platforms, it uses `perror` to print the message
- * and the last error.
- *
- * @param msg The error message to print.
- */
-void print_socket_error(const char *msg) {
-#ifdef _WIN32
-    fprintf(stderr, "%s: Error %d\n", msg, WSAGetLastError());
-#else
-    perror(msg);
 #endif
 }
 
@@ -162,6 +141,34 @@ const char* platform_socket_strerror(PlatformSocketError error) {
     }
 }
 
-#ifdef __cplusplus
-}
+/**
+ * Retrieves detailed socket error information as a string.
+ * The error message is written to the provided buffer.
+ *
+ * @param buffer       The buffer to store the error message.
+ * @param buffer_size  The size of the buffer.
+ */
+void get_socket_error_message(char* buffer, size_t buffer_size) {
+#ifdef _WIN32
+    int errorCode = WSAGetLastError();
+    LPSTR lpMsgBuf = NULL;
+    FormatMessageA(
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+        NULL,
+        errorCode,
+        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        (LPSTR)&lpMsgBuf,
+        0,
+        NULL
+    );
+    snprintf(buffer, buffer_size, "Socket operation failed with error: %d: %s",
+        errorCode, lpMsgBuf ? lpMsgBuf : "Unknown error");
+    if (lpMsgBuf) {
+        LocalFree(lpMsgBuf);
+    }
+#else
+    int errsv = errno;
+    snprintf(buffer, buffer_size, "Socket operation failed with error: %d: %s",
+        errsv, strerror(errsv));
 #endif
+}

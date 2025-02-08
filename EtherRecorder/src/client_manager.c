@@ -1,6 +1,7 @@
 #include "client_manager.h"
 
-#include <stdio.h> // for perror
+#include <stdio.h>      // for perror, snprintf
+#include <string.h>     // for memcpy, memset, strncpy, memmove, strerror
 
 #include "common_socket.h"
 #include "app_thread.h"
@@ -8,261 +9,265 @@
 #include "platform_utils.h"
 #include "app_config.h"
 
-
 extern volatile bool shutdown_flag;
 
-#define BIG_SIZE 1024
+#define BUFFER_SIZE               8192
+#define SOCKET_ERROR_BUFFER_SIZE  256
 
-#define BUFFER_SIZE 256
+/**
+ * Sets up the fd_set and timeval for the select call.
+ */
+void setup_select(SOCKET sock, fd_set* read_fds, struct timeval* timeout) {
+    FD_ZERO(read_fds);
+    FD_SET(sock, read_fds);
 
-void printW_Wsa_error() {
-    int errorCode = WSAGetLastError();
-
-    fprintf(stderr, "Sockects failed with error: %d\n", errorCode);
-
-    char errorMsg = NULL;
-    FormatMessageA(
-        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-        NULL,
-        errorCode,
-        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-        (LPWSTR)&errorMsg,
-        0,
-        NULL
-    );
-    fprintf(stderr, "Error message: %s\n", errorMsg);
-    LocalFree(errorMsg);
-
-}
-
-int main(void) {
-    // Example buffer containing at least 12 bytes
-    uint8_t buffer[12] {
-        0xA1, 0xA2, 
-        0xA3, 0xA4, 
-        0xA5, 0xA6, 
-        0xA7, 0xA8, 
-        0xA9, 0xAA, 
-        0xAB, 0xAC
-    }
-
-    // Prin the first 6 pairs of bytes as 16-bit integers in hex
-    for (int i = 0; i < 6; i++) {
-        uint16_t value = (buffer[i * 2] << 8) | buffer[i * 2 + 1];
-        printf("0x%04X\n", value);
-    }
-}
-
-///////
-///////
-
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <stdio.h>
-
-#pragma comment(lib, "ws2_32.lib")  // Link against Winsock library
-
-int main() {
-    WSADATA wsa;
-    WSAStartup(MAKEWORD(2, 2), &wsa);
-
-    SOCKET sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd == INVALID_SOCKET) {
-        printf("Socket creation failed: %d\n", WSAGetLastError());
-        return 1;
-    }
-
-    struct sockaddr_in server_addr;
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(8080);
-    inet_pton(AF_INET, "127.0.0.1", &server_addr.sin_addr);
-
-    if (connect(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) == SOCKET_ERROR) {
-        printf("Connect failed: %d\n", WSAGetLastError());
-        closesocket(sockfd);
-        WSACleanup();
-        return 1;
-    }
-
-    // ✅ Initialize `select()` structures
-    fd_set read_fds;
-    FD_ZERO(&read_fds);
-    FD_SET(sockfd, &read_fds);
-
-    struct timeval timeout;
-    timeout.tv_sec = 5;   // 5-second timeout
-    timeout.tv_usec = 0;  // 0 microseconds
-
-    printf("Waiting for data...\n");
-
-    int ret = select(0, &read_fds, NULL, NULL, &timeout);
-    if (ret == 0) {
-        printf("Timeout: No data received within 5 seconds\n");
-    } else if (ret > 0) {
-        // Data is available, call recv()
-        char buffer[1024];
-        int bytes_received = recv(sockfd, buffer, sizeof(buffer) - 1, 0);
-        if (bytes_received > 0) {
-            buffer[bytes_received] = '\0';
-            printf("Received: %s\n", buffer);
-        } else if (bytes_received == 0) {
-            printf("Connection closed by peer\n");
-        } else {
-            printf("recv failed: %d\n", WSAGetLastError());
-        }
-    } else {
-        printf("select failed: %d\n", WSAGetLastError());
-    }
-
-    closesocket(sockfd);
-    WSACleanup();
-    return 0;
-}
-
-/////// 
-///////
-
-int do process_tcp_atream(SOCKET soxk, uint32_t *out_buffer, int out_buffer_size) {
-
-
-    int ret = select(sock + 1, &read_fds, NULL, NULL, &timeout);
-    if (ret == 0) {
-        logger_log(LOG_DEBUG, "Timeout: No data received within 5 seconds");
-        return 0;
-    } else if (ret > 0) {
-        // Data is available, call recv()
-        int bytes_received = recv(sock, buffer + buffered_length, bytes_to_read, 0);
-        if (bytes_received > 0) {
-            logger_log(LOG_DEBUG, "Received: %s", buffer);
-        } else if (bytes_received == 0) {
-            logger_log(LOG_DEBUG, "Connection closed by peer");
-        } else {
-            logger_log(LOG_ERROR, "recv failed: %d", WSAGetLastError());
-        }
-    } else {
-        logger_log(LOG_ERROR, "select failed: %d", WSAGetLastError());
-    }
-    while (1) {
-        int bytes_to_read = BUFFER_SIZE - buffered_length;
-        if (bytes_to_read <= 0) {
-            logger_log(LOG_ERROR, "Buffer overflow; clearing buffer.");
-            buffered_length = 0;
-            continue;
-        }
-        int bytes_received = recv(sock, buffer + buffered_length, bytes_to_read, 0);
-        if (bytes_received <= 0) {
-            logger_log(LOG_ERROR, "recv error or connection closed (received %d bytes)", bytes_received);
-            return -1;
-        }
-        logger_log(LOG_DEBUG, "Received %d bytes", bytes_received);
-        buffered_length += bytes_received;
-
-        while (1) {
-            int start_index = find_marker_in_buffer(buffer, buffered_length, START_MARKER);
-            if (start_index < 0) {
-                logger_log(LOG_DEBUG, "No START_MARKER in current batch");
-                if (buffered_length > 3) {
-                    memmove(buffer, buffer + buffered_length - 3, 3);
-                    buffered_length = 3;
-                }
-                break;
-            }
-            logger_log(LOG_DEBUG, "Found START_MARKER index = %d");
-            if (start_index > 0) {
-                memmove(buffer, buffer + start_index, buffered_length - start_index);
-                buffered_length -= start_index;
-            }
-
-            if (buffered_length < 8) {
-                break;
-            }
-
-            unsigned int payload_length = 0;
-            memcpy(&payload_length, buffer + 4, sizeof(payload_length));
-
-            unsigned int total_packet_size = 4 + 4 + payload_length + 4;
-            if (buffered_length < (int)total_packet_size) {
-                break;
-            }
-
-            // Process the packet
-            process_packet(buffer + 4, payload_length);
-
-            // Discard the processed packet
-            memmove(buffer, buffer + total_packet_size, buffered_length - total_packet_size);
-            buffered_length -= total_packet_size;
-        }
-    }
+    timeout->tv_sec = 5;   // 5-second timeout
+    timeout->tv_usec = 0;  // 0 microseconds
 }
 
 /**
- * The main communication loop, ensuring full sends/receives.
+ * Attempts to set up the socket connection, including retries with
+ * exponential backoff. For TCP, it tries to connect with a 5-second timeout.
+ * For UDP, no connection attempt is necessary.
+ *
+ * @param is_server      Flag indicating if this is a server.
+ * @param is_tcp         Flag indicating if the socket is TCP.
+ * @param addr           Pointer to the sockaddr_in for the server address.
+ * @param client_addr    Pointer to the sockaddr_in for the client address.
+ * @param hostname       The server hostname.
+ * @param port           The port number.
+ * @return A valid socket on success, or INVALID_SOCKET on failure.
  */
-void communication_loop(SOCKET sock, int is_server, int is_tcp, struct sockaddr_in *client_addr) {
-    int addr_len = sizeof(struct sockaddr_in);
-    bool valid_socket_connection = true;
+static SOCKET attempt_connection(bool is_server, bool is_tcp, struct sockaddr_in* addr,
+    struct sockaddr_in* client_addr, const char* hostname, int port) {
+    int backoff = 1;  // Start with a 1-second backoff.
+    while (!shutdown_flag) {
+        logger_log(LOG_DEBUG, "Client Manager Attempting to connect to server %s on port %d...", hostname, port);
+        SOCKET sock = setup_socket(is_server, is_tcp, addr, client_addr, hostname, port);
+        if (sock == INVALID_SOCKET) {
+            logger_log(LOG_ERROR, "Socket setup failed. Retrying in %d seconds...", backoff);
+            {
+                char error_buffer[SOCKET_ERROR_BUFFER_SIZE];
+                get_socket_error_message(error_buffer, sizeof(error_buffer));
+                logger_log(LOG_ERROR, "%s", error_buffer);
+            }
+            sleep(backoff);
+            backoff = (backoff < 32) ? backoff * 2 : 32;
+            continue;
+        }
 
-    while (valid_socket_connection) {
-        // Check for shutdown condition if needed.
+        if (is_tcp) {
+            if (connect_with_timeout(sock, addr, 5) == 0) {  // 5-second timeout.
+                logger_log(LOG_INFO, "Client Manager connected to server.");
+                return sock;
+            }
+            else {
+                logger_log(LOG_ERROR, "Connection failed. Retrying in %d seconds...", backoff);
+                {
+                    char error_buffer[SOCKET_ERROR_BUFFER_SIZE];
+                    get_socket_error_message(error_buffer, sizeof(error_buffer));
+                    logger_log(LOG_ERROR, "%s", error_buffer);
+                }
+                close_socket(&sock);
+                sleep(backoff);
+                backoff = (backoff < 32) ? backoff * 2 : 32;
+                continue;
+            }
+        }
+        else {
+            // For UDP clients no connection attempt is required.
+            logger_log(LOG_INFO, "UDP Client ready to send on port %d.", port);
+            return sock;
+        }
+    }
+    return INVALID_SOCKET;
+}
+
+/*
+ * format_block() writes a formatted 32-bit block into dest.
+ *
+ * This function always produces 4 "byte slots" after the "0x" prefix. For each
+ * carried slot, two dots ("..") are printed; for each new byte, its value is printed
+ * in hex (using %02X). If there aren’t enough bytes, the missing slots are filled with dots.
+ */
+static void format_block(char* dest, size_t dest_size, const uint8_t* new_bytes_ptr,
+    int carried_bytes, int new_bytes) {
+    int n = snprintf(dest, dest_size, "0x");
+    // For carried (old) bytes, print dots
+    for (int i = 0; i < carried_bytes; i++) {
+        n += snprintf(dest + n, dest_size - n, "..");
+    }
+    // For the new bytes, print their hex values
+    for (int i = 0; i < new_bytes; i++) {
+        n += snprintf(dest + n, dest_size - n, "%02X", new_bytes_ptr[i]);
+    }
+    // Fill any remaining slots (to total 4 bytes) with dots
+    int missing = 4 - (carried_bytes + new_bytes);
+    for (int i = 0; i < missing; i++) {
+        n += snprintf(dest + n, dest_size - n, "..");
+    }
+    // Append a space at the end
+    snprintf(dest + n, dest_size - n, " ");
+}
+
+/*
+ * log_buffered_data() logs the data accumulated since the last timeout.
+ *
+ */
+static void log_buffered_data(char* buffer, int* buffered_length, int batch_bytes) {
+
+    static int s_carry_length = 0;
+    // Total new bytes to consider = carried (from previous log) + current buffered bytes.
+    int total = s_carry_length + *buffered_length;
+    if (total == 0 && batch_bytes == 0)
+        return;
+
+    logger_log(LOG_INFO, "%d bytes received: top", batch_bytes);
+
+    int index = 0;
+    char block_str[64];
+
+    // If there are carried bytes from before, complete that block first.
+    if (s_carry_length > 0) {
+        int needed = 4 - s_carry_length;  // number of new bytes required to complete this block
+        if (*buffered_length >= needed) {
+            // Use the first 'needed' bytes from buffer to complete the block.
+            format_block(block_str, sizeof(block_str), buffer, s_carry_length, needed);
+            logger_log(LOG_INFO, "%s", block_str);
+            index += needed;
+            // Reset carried bytes since the block is now complete.
+            s_carry_length = 0;
+        }
+        else {
+            // Not enough new bytes to complete the block.
+            // Log the incomplete block using all the new bytes.
+            int new_bytes = *buffered_length;
+            format_block(block_str, sizeof(block_str), buffer, s_carry_length, new_bytes);
+            logger_log(LOG_INFO, "%s", block_str);
+            // Update carried count (but do not retain actual bytes).
+            s_carry_length += new_bytes;
+            *buffered_length = 0;
+            logger_log(LOG_INFO, "%d bytes received: bottom", batch_bytes);
+            return;
+        }
+    }
+
+    // Process complete blocks from the remaining new data.
+    while (index + 4 <= *buffered_length) {
+        format_block(block_str, sizeof(block_str), buffer + index, 0, 4);
+        logger_log(LOG_INFO, "%s", block_str);
+        index += 4;
+    }
+
+    // Process any leftover new bytes (incomplete block)
+    if (index < *buffered_length) {
+        int new_leftover = *buffered_length - index;
+        format_block(block_str, sizeof(block_str), buffer + index, 0, new_leftover);
+        logger_log(LOG_INFO, "%s", block_str);
+        // Save the count (we do not retain the actual data)
+        s_carry_length = new_leftover;
+    }
+    else {
+        s_carry_length = 0;
+    }
+
+    // Clear the buffer.
+    *buffered_length = 0;
+    logger_log(LOG_INFO, "%d bytes received: bottom", batch_bytes);
+}
+
+/*
+ * handle_data_reception() reads data from the socket, updating both the overall
+ * buffered length and the count of new bytes (batch_bytes) since the last log.
+ */
+int handle_data_reception(SOCKET sock, char* buffer, int* buffered_length, int* batch_bytes) {
+    int bytes = recv(sock, buffer + *buffered_length, BUFFER_SIZE - *buffered_length, 0);
+    if (bytes <= 0) {
+        char err_buf[SOCKET_ERROR_BUFFER_SIZE];
+        get_socket_error_message(err_buf, sizeof(err_buf));
+        logger_log(LOG_ERROR, "recv error or connection closed (received %d bytes): %s", bytes, err_buf);
+        return -1;
+    }
+    *buffered_length += bytes;
+    *batch_bytes += bytes;
+    logger_log(LOG_DEBUG, "Received %d bytes", bytes);
+    return 0;
+}
+
+/*
+ * client_comms_loop() waits for data on the socket. When select times out (i.e. no
+ * data is waiting), it logs the accumulated data (since the last timeout) and clears
+ * complete blocks from the buffer.
+ */
+void client_comms_loop(SOCKET sock, int is_server, int is_tcp, struct sockaddr_in* client_addr) {
+    bool valid = true;
+    char buffer[BUFFER_SIZE];
+    int buffered_length = 0;
+    int batch_bytes = 0;
+
+    while (valid) {
         if (shutdown_flag) {
             logger_log(LOG_DEBUG, "Shutdown requested, exiting communication loop.");
             break;
         }
 
-        DummyPayload sendPayload;
-        int send_buffer_len = generateRandomData(&sendPayload);
-        if (send_buffer_len > 0) {
-            logger_log(LOG_DEBUG, "Sending %d bytes of data.", send_buffer_len);
-            if (send_all_data(sock, &sendPayload, send_buffer_len, is_tcp, client_addr, addr_len) != 0) {
-                logger_log(LOG_ERROR, "Send error. Exiting loop.");
-                valid_socket_connection = false;
-                close_socket(&sock);
-                break;
-            }
-            logger_log(LOG_DEBUG, "Sleeping in comms loop");
-            sleep_ms(100);
-            logger_log(LOG_DEBUG, "Woken in comms loop");
-        }
+        fd_set read_fds;
+        struct timeval timeout;
+        setup_select(sock, &read_fds, &timeout);
+        int ret = select((int)sock + 1, &read_fds, NULL, NULL, &timeout);
 
-        DummyPayload receivePayload;
-        int receive_buffer_len = sizeof(DummyPayload);
-        logger_log(LOG_DEBUG, "Entering receive_all_data");
-        int packet_size = receive_all_data(sock, &receivePayload, receive_buffer_len, is_tcp, client_addr, &addr_len);
-        if (packet_size <= 0) {
-            logger_log(LOG_ERROR, "Receive error. Exiting loop.");
-            valid_socket_connection = false;
+        if (ret < 0) {
+            logger_log(LOG_ERROR, "Select error. Exiting loop.");
+            char err_buf[SOCKET_ERROR_BUFFER_SIZE];
+            get_socket_error_message(err_buf, sizeof(err_buf));
+            logger_log(LOG_ERROR, "%s", err_buf);
+            valid = false;
             close_socket(&sock);
             break;
         }
-        logger_log(LOG_DEBUG, "Received complete packet (%d bytes)", packet_size);
 
-        // Extract payload length from the received packet.
-        unsigned int payload_length = 0;
-        memcpy(&payload_length, ((char *)&receivePayload) + 4, sizeof(payload_length));
+        /* If data is ready, drain the socket queue completely */
+        while (ret > 0 && FD_ISSET(sock, &read_fds)) {
+            if (handle_data_reception(sock, buffer, &buffered_length, &batch_bytes) < 0) {
+                valid = false;
+                close_socket(&sock);
+                break;
+            }
+            /* Check immediately if more data is available (non-blocking) */
+            FD_ZERO(&read_fds);
+            FD_SET(sock, &read_fds);
+            timeout.tv_sec = 0;
+            timeout.tv_usec = 0;
+            ret = select((int)sock + 1, &read_fds, NULL, NULL, &timeout);
+        }
 
-        // Process the received dummy packet.
-        // The payload is located after the start marker and the length field (i.e. at offset 8).
-        process_payload(((char *)&receivePayload) + 8, payload_length);
-
-        logger_log(LOG_DEBUG, "Bottom of comms loop while valid connection");
+        /* When no more data is waiting, log the accumulated data */
+        if (ret == 0) {
+            if (buffered_length > 0)
+                log_buffered_data(buffer, &buffered_length, batch_bytes);
+            else
+                logger_log(LOG_DEBUG, "Timeout: No data received within 5 seconds");
+            batch_bytes = 0;
+        }
     }
 }
 
-
-
+/**
+ * Main client thread entry point.
+ */
 void* clientMainThread(void* arg) {
     AppThreadArgs_T* thread_info = (AppThreadArgs_T*)arg;
     set_thread_label(thread_info->label);
     ClientThreadArgs_T* client_info = (ClientThreadArgs_T*)thread_info->data;
 
-    // see if the server_hostname is in the config
+    // Check for the server hostname in the configuration.
     const char* config_server_hostname = get_config_string("network", "client.server_hostname", NULL);
-
-    // TODO Verify that this palavar is neccesary, having client_indo_server
-    if (config_server_hostname != config_server_hostname) {
-        strncpy(client_info->client_hostname, config_server_hostname, sizeof(client_info->client_hostname));
-        client_info->client_hostname[sizeof(client_info->client_hostname) - 1] = '\0';
+    if (config_server_hostname) {
+        strncpy(client_info->server_hostname, config_server_hostname, sizeof(client_info->server_hostname));
+        client_info->server_hostname[sizeof(client_info->server_hostname) - 1] = '\0';
     }
+    client_info->port = get_config_int("network", "client.port", client_info->port);
+    logger_log(LOG_INFO, "Client Manager will attempt to connect to Server: %s, port: %d", client_info->server_hostname, client_info->port);
 
     int port = client_info->port;
     bool is_tcp = client_info->is_tcp;
@@ -273,52 +278,18 @@ void* clientMainThread(void* arg) {
     memset(&addr, 0, sizeof(addr));
     memset(&client_addr, 0, sizeof(client_addr));
 
-    // logger_log(LOG_INFO, "CLIENT: Resolving hostname %s...", client_info->client_hostname);
-
-    bool reconnection_required = true;
-    int backoff = 1;  // Start backoff at 1 second
-
-    while (reconnection_required && !shutdown_flag) {
-        logger_log(LOG_DEBUG, "CLIEN MAnagerAttempting to connect to server %s on port %d...", client_info->client_hostname, port);
-        /// setup socket handles everything required for the client to connect to the server
-        sock = setup_socket(is_server, is_tcp, &addr, &client_addr, client_info->client_hostname, port);
-        if (sock == INVALID_SOCKET) {
-            logger_log(LOG_ERROR, "Socket setup failed. Retrying in %d seconds...", backoff);
-            sleep(backoff);
-            backoff = (backoff < 32) ? backoff * 2 : 32;  // Exponential backoff
-            continue;  // Retry setup
-        }
-
-        if (is_tcp) {
-            if (connect_with_timeout(sock, &addr, 5) == 0) {  // 5s timeout
-                logger_log(LOG_INFO, "Client Mananger connected to server.");
-                reconnection_required = false;
-            } else {
-                logger_log(LOG_ERROR, "Connection failed. Retrying in %d seconds...", backoff);
-                close_socket(&sock);
-                sleep(backoff);
-                backoff = (backoff < 32) ? backoff * 2 : 32;
-                continue;
-            }
-        } else {
-            // UDP clients don’t need to connect
-            logger_log(LOG_INFO, "UDP Client ready to send on port %d.", port);
-            reconnection_required = false;
-        }
-    }
-
-    if (shutdown_flag) {
+    // Attempt to connect to the server.
+    sock = attempt_connection(is_server, is_tcp, &addr, &client_addr,
+        client_info->server_hostname, port);
+    if (sock == INVALID_SOCKET) {
         logger_log(LOG_INFO, "Shutdown requested before communication started.");
-        close_socket(&sock);
         return NULL;
     }
 
-    // Now we can do the communication loop
-    // eventually, this will be moved to a  two deiicated threads for sending and receiving
+    // Start the communication loop.
     client_comms_loop(sock, is_server, is_tcp, &client_addr);
     close_socket(&sock);
 
     logger_log(LOG_INFO, "CLIENT: Exiting client thread.");
     return NULL;
 }
-
