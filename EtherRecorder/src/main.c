@@ -62,6 +62,7 @@ int print_working_directory() {
 }
 
 static AppError init_app() {
+    init_timestamp_system();
     set_thread_label("MAIN");
     char config_load_result[LOG_MSG_BUFFER_SIZE];
     char logger_init_result[LOG_MSG_BUFFER_SIZE];
@@ -143,7 +144,7 @@ int main(int argc, char *argv[]) {
     // Wait for other threads to shut down gracefully
     int timeout_ms = 50000; // 5 seconds timeout
     if (!wait_for_shutdown(timeout_ms)) {
-        logger_log(LOG_ERROR, "Main threadwill try to kill stubborn threads");
+        logger_log(LOG_ERROR, "Main thread will try to kill stubborn threads");
         // Forcefully terminate any remaining threads
         // This is platform-specific and should be handled carefully
         // For example, on Windows, you can use TerminateThread (not recommended)

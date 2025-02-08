@@ -70,7 +70,7 @@ static LARGE_INTEGER g_qpc_frequency;
 static LogTimestampGranularity g_log_timestamp_granularity = LOG_TS_NANOSECOND;  // Default
 static LogLevel g_log_level = LOG_DEBUG; // Current log level
 static LogOutput g_log_output = LOG_OUTPUT_BOTH; // Log output destination
-int g_log_leading_zeros = -1;  // Default: Derived dynamically
+int g_log_leading_zeros = 12;
 bool g_log_use_ansi_colours = false;
 static int g_timestamp_initialised = 0;
 
@@ -180,58 +180,78 @@ static const char* get_log_level_colour(LogLevel level) {
 }
 
 /**
-* @brief Publishes a log entry to the appropriate destination (file or console).
-* @param entry The log entry.
-* @param log_output The file pointer (`stderr` for screen output).
-*/
+ * @brief Publishes a log entry to the appropriate destination (file or console).
+ * @param entry The log entry.
+ * @param log_output The file pointer (typically stderr for screen output).
+ */
+#include <math.h>
+
 static void publish_log_entry(const LogEntry_T* entry, FILE* log_output) {
     if (!entry || !entry->message) {
         fprintf(stderr, "Log Error: Attempted to log NULL or blank message\n");
         return;
     }
 
-    /* Ensure the timestamp system is initialized */
-    if (!g_timestamp_initialised) {
-        init_timestamp_system();
-    }
-
-    /* Convert timestamp to elapsed time since QPC reference */
+    /*
+     * We assume the timestamp system is already initialised at application startup.
+     * Calculate the elapsed ticks since the QPC reference.
+     */
     int64_t elapsed_ticks = entry->timestamp.QuadPart - g_qpc_reference.QuadPart;
     int64_t elapsed_seconds = elapsed_ticks / g_qpc_frequency.QuadPart;
 
     /* Convert stored FILETIME reference to time_t (seconds since Unix epoch) */
     time_t rawtime = (time_t)((g_filetime_reference_ularge.QuadPart / 10000000ULL) - 11644473600ULL);
-    rawtime += (time_t)elapsed_seconds;
+    rawtime += elapsed_seconds;
 
     struct tm timeinfo;
     localtime_s(&timeinfo, &rawtime);
 
-    /* Extract the correct nanosecond component using integer arithmetic */
-    int64_t nanoseconds = (elapsed_ticks % g_qpc_frequency.QuadPart) * (1000000000 / g_qpc_frequency.QuadPart);
+    int64_t nanoseconds = (elapsed_ticks % g_qpc_frequency.QuadPart) *
+        (1000000000 / g_qpc_frequency.QuadPart);
 
-    /* Adjust timestamp precision based on `g_log_timestamp_granularity` */
-    int64_t adjusted_time = nanoseconds / (1000000000 / g_log_timestamp_granularity);
+    /*
+     * We now assume that g_log_timestamp_granularity is a power of 10.
+     * For example, if g_log_timestamp_granularity is 1000000 (for microsecond precision),
+     * the divisor becomes 1000000000 / 1000000 = 1000.
+     */
+    int64_t divisor = 1000000000 / g_log_timestamp_granularity;
+    int64_t adjusted_time = nanoseconds / divisor;
 
-    /* Apply user-defined leading zero count if set */
-    int precision_width = (g_log_leading_zeros >= 0) ? g_log_leading_zeros : (int)log10(g_log_timestamp_granularity);
+    /*
+     * Determine the field width to print the fractional part by taking
+     * the base-10 logarithm of g_log_timestamp_granularity.
+     * For instance, log10(1000000) yields 6.
+     */
+    int fractional_width = (int)log10((double)g_log_timestamp_granularity);
 
-    /* Get ANSI colour for log level (only for console output) */
+    /* Determine log index width (default: 12, or user-defined) */
+    int index_width = (g_log_leading_zeros >= 0) ? g_log_leading_zeros : 12;
+
+    /* Get ANSI colour for the log level (only for console output) */
     const char* log_colour = (log_output == stderr) ? get_log_level_colour(entry->level) : "";
-    const char* reset_colour = (log_output == stderr) ? ANSI_RESET : "";
+    const char* reset_colour = (log_output == stderr) ? "\x1b[0m" : "";
 
     char time_buffer[64];
     strftime(time_buffer, sizeof(time_buffer), "%Y-%m-%d %H:%M:%S", &timeinfo);
 
-    /* Print timestamp dynamically based on required precision */
-    if (precision_width > 0) {
-        fprintf(log_output, "%012llu %s.%0*lld %s%s%s: %s\n",
-            entry->index, time_buffer, precision_width, adjusted_time,
+    /*
+     * Print the log entry.
+     * The index is printed with leading zeros using 'index_width'.
+     * The sub-second part is printed with a field width equal to 'fractional_width',
+     * ensuring that leading zeros are preserved.
+     */
+    if (fractional_width > 0) {
+        fprintf(log_output, "%0*llu %s.%0*lld %s%s%s: %s\n",
+            index_width, entry->index,
+            time_buffer,
+            fractional_width, adjusted_time,
             log_colour, log_level_to_string(entry->level), reset_colour,
             entry->message);
     }
     else {
-        fprintf(log_output, "%012llu %s %s%s%s: %s\n",
-            entry->index, time_buffer,
+        fprintf(log_output, "%0*llu %s %s%s%s: %s\n",
+            index_width, entry->index,
+            time_buffer,
             log_colour, log_level_to_string(entry->level), reset_colour,
             entry->message);
     }
@@ -576,8 +596,13 @@ bool init_logger_from_config(char* logger_init_result) {
     /* Read ANSI colour setting */
     g_log_use_ansi_colours = get_config_bool("logger", "ansi_colours", false);
 
+    /* make leading zeros on the index for the log message*/
+    g_log_leading_zeros = get_config_int("logger", "log_leading_zeros", g_log_leading_zeros);
+
     /* Read log file size (moved higher) */
     log_file_size = get_config_int("logger", "log_file_size", log_file_size);
+
+
 
     /* Read log file path and name */
     const char* config_log_file_path = get_config_string("logger", CONFIG_LOG_PATH_KEY, NULL);

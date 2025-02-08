@@ -57,7 +57,14 @@
     <ClInclude Include="inc\server_manager.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\OLD_config.ini" />
+    <None Include="..\config.ini" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="..\logs\client.log" />
+    <Text Include="..\logs\ether_recorder.log" />
+    <Text Include="..\logs\generic.log" />
+    <Text Include="..\logs\generic3.log" />
+    <Text Include="..\logs\server.log" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
