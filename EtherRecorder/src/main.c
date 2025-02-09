@@ -8,6 +8,7 @@
 #include "app_config.h"
 #include "platform_utils.h"
 #include "app_thread.h"
+#include "shutdown_handler.h"
 
 
 extern volatile bool shutdown_flag;
@@ -64,6 +65,8 @@ int print_working_directory() {
 static AppError init_app() {
     init_timestamp_system();
     set_thread_label("MAIN");
+    install_shutdown_handler();
+
     char config_load_result[LOG_MSG_BUFFER_SIZE];
     char logger_init_result[LOG_MSG_BUFFER_SIZE];
 
@@ -106,59 +109,32 @@ static AppError app_exit() {
     return APP_EXIT_SUCCESS;
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
     if (!parse_args(argc, argv)) {
         return APP_EXIT_FAILURE;
     }
-
-    // Initialise the shutdown condition and mutex
-    InitializeConditionVariable(&shutdown_condition);
-    InitializeCriticalSection(&shutdown_mutex);
-    // InitializeCriticalSection(&rand_mutex);
 
     int app_error = init_app();
     if (app_error != APP_EXIT_SUCCESS) {
         return app_error;
     }
 
-    // Now it's safe to log messages
-    logger_log(LOG_ERROR, "Logger initialised successfully");
- 
+    // Now it's safe to log messages, though the dedicaetd logger thread
+    // is not yet running
+    logger_log(LOG_INFO, "Logger initialised successfully");
+
     // Start threads.
     // Successfully starting the logging thread will mean that logging will
     // utilise a log message queue, for asynchronous operation, to avoid threads 
     // blocking on logging.
     start_threads();
+    logger_log(LOG_DEBUG, "App threads started");
 
-    sleep(5000); // 5 seconds
-    logger_log(LOG_INFO, "Main thread sleeping for 5 seconds");
+  //   // if we need to do something before final shutdown then wait for shutdown 
+  //   // to be indicated, do it, then wait for all the thread to complete
+	 //wait_for_shutdown_signal(INFINITE);
 
-    // Wait for XX seconds
-	// TODO get rid of this. It's just to test the logger queue
-    sleep_ms(13000); 
+	wait_for_all_threads_to_complete();
 
-    logger_log(LOG_INFO, "Main is requesting shutdown");
-    // Request logger shutdown
-    request_shutdown();
-
-    // Wait for other threads to shut down gracefully
-    int timeout_ms = 50000; // 5 seconds timeout
-    if (!wait_for_shutdown(timeout_ms)) {
-        logger_log(LOG_ERROR, "Main thread will try to kill stubborn threads");
-        // Forcefully terminate any remaining threads
-        // This is platform-specific and should be handled carefully
-        // For example, on Windows, you can use TerminateThread (not recommended)
-    }
-
-
-	sleep_seconds(20); // 20 seconds
-
-    // Signal the logger thread to shut down
-    request_shutdown();
-
-    // Shut down the logger thread
-    logger_close();
-
-    printf("Main has closed the logger and will exit\n");
     return app_exit();
 }

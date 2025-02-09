@@ -63,30 +63,39 @@ typedef enum LogTimestampGranularity {
 bool g_trace_all = false;
 #endif
 
+
 static PlatformMutex_T logging_mutex; // Mutex for thread safety
-static LARGE_INTEGER g_qpc_reference;
+static ThreadLogFile thread_log_files[MAX_THREADS + 1]; // +1 for the main application log file
+
+// for high-resolution timestamps
 static ULARGE_INTEGER g_filetime_reference_ularge;
+static LARGE_INTEGER g_qpc_reference;
 static LARGE_INTEGER g_qpc_frequency;
+static int g_timestamp_initialised = 0;
+
 static LogTimestampGranularity g_log_timestamp_granularity = LOG_TS_NANOSECOND;  // Default
 static LogLevel g_log_level = LOG_DEBUG; // Current log level
 static LogOutput g_log_output = LOG_OUTPUT_BOTH; // Log output destination
 int g_log_leading_zeros = 12;
-bool g_log_use_ansi_colours = false;
-static int g_timestamp_initialised = 0;
 
-static ThreadLogFile thread_log_files[MAX_THREADS + 1]; // +1 for the main application log file
-static int thread_log_file_count = 0;
+//colour is nice 
+static bool g_log_use_ansi_colours = false;
+
+// incremented when we learn of a thread that needs logging, gives total number of threads 
+// that we need to query for log file names and open file handles
+static int g_thread_log_file_count = 0;
 
 // defaults if not read from the config file
 static char log_file_path[MAX_PATH] = "";             // Log file path
 static char log_file_name[MAX_PATH] = "log_file.log"; // Log file name
-static off_t log_file_size = 10485760;                // Log file size before rotation
+static off_t g_log_file_size = 10485760;                // Log file size before rotation
 
 // Thread-specific log file
 THREAD_LOCAL static char thread_log_file[MAX_PATH] = "";
 
 static PlatformThread_T log_thread; // Logging thread
 static bool logging_thread_started = false; // indicate whether the logger thread has started
+static bool g_purge_logs_on_restart = false;
 
 
 /**
@@ -144,15 +153,15 @@ LogLevel log_level_from_string(const char* level_str, LogLevel default_level) {
 }
 
 
-/* Call this once at startup to calibrate the high‐resolution timer with system time */
+/* Call this once at startup to calibrate the high-resolution timer with system time */
 void init_timestamp_system(void) {
     /* Get the frequency once */
     QueryPerformanceFrequency(&g_qpc_frequency);
 
-    /* Capture the high-resolution counter */
+    /* Capture the high-resolution counter for basiline */
     QueryPerformanceCounter(&g_qpc_reference);
 
-    /* Immediately capture the system time as FILETIME */
+    /* Immediately capture the system time as FILETIME to sync with high-resolution timer*/
     FILETIME file_time;
     GetSystemTimeAsFileTime(&file_time);
     g_filetime_reference_ularge.LowPart = file_time.dwLowDateTime;
@@ -285,17 +294,19 @@ static void construct_log_file_name(char *full_log_file_name, size_t size, const
 void set_log_thread_file(const char *label, const char *filename) {
     lock_mutex(&logging_mutex); // Lock the mutex
 
-    if (thread_log_file_count >= MAX_THREADS) {
+    if (g_thread_log_file_count >= MAX_THREADS) {
         // Maximum number of threads reached
         unlock_mutex(&logging_mutex); // Unlock the mutex
         return;
     }
 
-    strncpy(thread_log_files[thread_log_file_count].thread_label, label, sizeof(thread_log_files[thread_log_file_count].thread_label) - 1);
-    strncpy(thread_log_files[thread_log_file_count].log_file_name, filename, sizeof(thread_log_files[thread_log_file_count].log_file_name) - 1);
+    strncpy(thread_log_files[g_thread_log_file_count].thread_label, label, sizeof(thread_log_files[g_thread_log_file_count].thread_label) - 1);
+    strncpy(thread_log_files[g_thread_log_file_count].log_file_name, filename, sizeof(thread_log_files[g_thread_log_file_count].log_file_name) - 1);
     // Don't open yet, leave it to the first log message in the context of the logger.
-    thread_log_files[thread_log_file_count].log_fp = NULL;    
-    thread_log_file_count++;
+    thread_log_files[g_thread_log_file_count].log_fp = NULL;   
+
+    // incremented each time we learn of a thread that needed logging
+    g_thread_log_file_count++;
 
     unlock_mutex(&logging_mutex); // Unlock the mutex
 }
@@ -391,7 +402,11 @@ static bool open_log_file_if_needed(ThreadLogFile *thread_log_file) {
         }
     }
 
-    thread_log_file->log_fp = fopen(thread_log_file->log_file_name, "a");
+	char* mode = "a"; // Append mode by default
+	if (g_purge_logs_on_restart) {
+		mode = "w"; // Overwrite mode if purge_logs_on_restart is true
+	}
+    thread_log_file->log_fp = fopen(thread_log_file->log_file_name, mode);
     if (thread_log_file->log_fp == NULL) {
         if (log_failure_count == 0) {
             char error_message[LOG_MSG_BUFFER_SIZE];
@@ -419,7 +434,7 @@ static bool open_log_file_if_needed(ThreadLogFile *thread_log_file) {
 static void rotate_log_file_if_needed(ThreadLogFile *thread_log_file) {
     lock_mutex(&logging_mutex);
     struct stat st;
-    if (stat(thread_log_file->log_file_name, &st) == 0 && st.st_size >= log_file_size) {
+    if (stat(thread_log_file->log_file_name, &st) == 0 && st.st_size >= g_log_file_size) {
         fclose(thread_log_file->log_fp);
         char rotated_log_filename[512];
         generate_log_filename(rotated_log_filename, sizeof(rotated_log_filename));
@@ -493,7 +508,7 @@ static void log_immediately(const LogEntry_T* entry) {
     }
 
     /* Check if the current thread has a specific log file */
-    for (int i = 1; i <= thread_log_file_count; i++) {
+    for (int i = 1; i <= g_thread_log_file_count; i++) {
         if (thread_label && str_cmp_nocase(thread_log_files[i].thread_label, thread_label) == 0) {
             if (thread_log_files[i].log_fp) rotate_log_file_if_needed(&thread_log_files[i]);
             if (!open_log_file_if_needed(&thread_log_files[i])) {
@@ -585,6 +600,8 @@ bool init_logger_from_config(char* logger_init_result) {
     init_mutex(&logging_mutex);
     lock_mutex(&logging_mutex);
 
+	g_purge_logs_on_restart = get_config_bool("logger", "purge_logs_on_restart", g_purge_logs_on_restart);
+
     /* Read log destination */
     const char* config_log_destination = get_config_string("logger", "log_destination", NULL);
     g_log_output = log_output_from_string(config_log_destination, LOG_OUTPUT_SCREEN); // Default to screen
@@ -594,13 +611,13 @@ bool init_logger_from_config(char* logger_init_result) {
     g_log_timestamp_granularity = timestamp_granularity_from_string(config_timestamp_granularity, LOG_TS_NANOSECOND);
 
     /* Read ANSI colour setting */
-    g_log_use_ansi_colours = get_config_bool("logger", "ansi_colours", false);
+    g_log_use_ansi_colours = get_config_bool("logger", "ansi_colours", g_log_use_ansi_colours);
 
     /* make leading zeros on the index for the log message*/
     g_log_leading_zeros = get_config_int("logger", "log_leading_zeros", g_log_leading_zeros);
 
     /* Read log file size (moved higher) */
-    log_file_size = get_config_int("logger", "log_file_size", log_file_size);
+    g_log_file_size = get_config_int("logger", "log_file_size", g_log_file_size);
 
 
 
@@ -650,7 +667,7 @@ bool init_logger_from_config(char* logger_init_result) {
     }
 
     // the next time thread_log_files is referenced it will be for the thread occupying the next slot
-    thread_log_file_count++;
+    g_thread_log_file_count++;
 
     /* Unlock mutex before returning */
     unlock_mutex(&logging_mutex);
@@ -681,12 +698,12 @@ void logger_set_output(LogOutput output) {
 void logger_close() {
     lock_mutex(&logging_mutex);
     // Close all thread-specific log files
-    for (int i = 0; i < thread_log_file_count; i++) {
+    for (int i = 0; i < g_thread_log_file_count; i++) {
         if (thread_log_files[i].log_fp) {
             fclose(thread_log_files[i].log_fp);
         }
     }
-    thread_log_file_count = 0;
+    g_thread_log_file_count = 0;
 
     unlock_mutex(&logging_mutex);
 

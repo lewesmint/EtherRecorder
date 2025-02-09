@@ -241,11 +241,11 @@ void process_payload(const char *payload, unsigned int payload_length) {
 }
 
 /**
- * Searches the given buffer (of length buffer_length) for the 4‑byte marker.
+ * Searches the given buffer (of length buffer_length) for the 4-byte marker.
  *
  * @param buffer         The buffer to search.
  * @param buffer_length  The number of valid bytes in the buffer.
- * @param marker         The 4‑byte marker to search for.
+ * @param marker         The 4-byte marker to search for.
  *
  * @return The index where the marker begins, or -1 if not found.
  */
@@ -283,7 +283,7 @@ int find_marker_in_buffer(const char *buffer, int buffer_length, unsigned int ma
  *
  * Packet format:
  *   - 4 bytes: START_MARKER (0xBAADF00D)
- *   - 4 bytes: payload length (unsigned int) – number of payload bytes.
+ *   - 4 bytes: payload length (unsigned int) - number of payload bytes.
  *   - N bytes: payload data (N == payload length)
  *   - 4 bytes: END_MARKER (0xDEADBEEF)
  *

@@ -1,4 +1,4 @@
-#include "client_manager.h"
+﻿#include "client_manager.h"
 
 #include <stdio.h>      // for perror, snprintf
 #include <string.h>     // for memcpy, memset, strncpy, memmove, strerror
@@ -13,17 +13,8 @@ extern volatile bool shutdown_flag;
 
 #define BUFFER_SIZE               8192
 #define SOCKET_ERROR_BUFFER_SIZE  256
+#define BLOCKING_TIMEOUT_SEC 10  // Blocking timeout in seconds
 
-/**
- * Sets up the fd_set and timeval for the select call.
- */
-void setup_select(SOCKET sock, fd_set* read_fds, struct timeval* timeout) {
-    FD_ZERO(read_fds);
-    FD_SET(sock, read_fds);
-
-    timeout->tv_sec = 5;   // 5-second timeout
-    timeout->tv_usec = 0;  // 0 microseconds
-}
 
 /**
  * Attempts to set up the socket connection, including retries with
@@ -80,6 +71,9 @@ static SOCKET attempt_connection(bool is_server, bool is_tcp, struct sockaddr_in
             return sock;
         }
     }
+    if (shutdown_flag) {
+		logger_log(LOG_INFO, "Client Manager attempt to connect exiting due to app shutdown.");
+    }
     return INVALID_SOCKET;
 }
 
@@ -88,7 +82,7 @@ static SOCKET attempt_connection(bool is_server, bool is_tcp, struct sockaddr_in
  *
  * This function always produces 4 "byte slots" after the "0x" prefix. For each
  * carried slot, two dots ("..") are printed; for each new byte, its value is printed
- * in hex (using %02X). If there aren’t enough bytes, the missing slots are filled with dots.
+ * in hex (using %02X). If there aren't enough bytes, the missing slots are filled with dots.
  */
 static void format_block(char* dest, size_t dest_size, const uint8_t* new_bytes_ptr,
     int carried_bytes, int new_bytes) {
@@ -180,24 +174,50 @@ static void log_buffered_data(char* buffer, int* buffered_length, int batch_byte
  * handle_data_reception() reads data from the socket, updating both the overall
  * buffered length and the count of new bytes (batch_bytes) since the last log.
  */
-int handle_data_reception(SOCKET sock, char* buffer, int* buffered_length, int* batch_bytes) {
+static bool handle_data_reception(SOCKET sock, char* buffer, int* buffered_length, int* batch_bytes) {
+	// only read after a select, so we know data is available
     int bytes = recv(sock, buffer + *buffered_length, BUFFER_SIZE - *buffered_length, 0);
     if (bytes <= 0) {
         char err_buf[SOCKET_ERROR_BUFFER_SIZE];
         get_socket_error_message(err_buf, sizeof(err_buf));
         logger_log(LOG_ERROR, "recv error or connection closed (received %d bytes): %s", bytes, err_buf);
-        return -1;
+        return false;
     }
     *buffered_length += bytes;
     *batch_bytes += bytes;
     logger_log(LOG_DEBUG, "Received %d bytes", bytes);
-    return 0;
+    return true;
 }
 
-/*
- * client_comms_loop() waits for data on the socket. When select times out (i.e. no
- * data is waiting), it logs the accumulated data (since the last timeout) and clears
- * complete blocks from the buffer.
+/**
+ * @brief Sets up the fd_set and timeval for select().
+ *
+ * This helper function clears the fd_set, adds the given socket, and sets the timeout.
+ *
+ * @param sock     The socket descriptor to monitor.
+ * @param read_fds Pointer to the fd_set to be used with select().
+ * @param timeout  Pointer to the timeval structure to configure.
+ * @param sec      Seconds part of the timeout.
+ * @param usec     Microseconds part of the timeout.
+ */
+void setup_select_timeout(SOCKET sock, fd_set* read_fds, struct timeval* timeout, long sec, long usec) {
+    FD_ZERO(read_fds);
+    FD_SET(sock, read_fds);
+    timeout->tv_sec = sec;
+    timeout->tv_usec = usec;
+}
+
+/**
+ * @brief Monitors a socket for incoming data and processes it.
+ *
+ * This function uses a single loop. Initially, it uses a blocking select()
+ * with a 5‑second timeout. When data arrives, it switches to non‑blocking
+ * checks (timeout = 0) to drain all available data before reverting to blocking mode.
+ *
+ * @param sock        The socket descriptor to monitor.
+ * @param is_server   Unused flag indicating if this is a server.
+ * @param is_tcp      Unused flag indicating if the protocol is TCP.
+ * @param client_addr Unused pointer to client address information.
  */
 void client_comms_loop(SOCKET sock, int is_server, int is_tcp, struct sockaddr_in* client_addr) {
     bool valid = true;
@@ -205,15 +225,21 @@ void client_comms_loop(SOCKET sock, int is_server, int is_tcp, struct sockaddr_i
     int buffered_length = 0;
     int batch_bytes = 0;
 
-    while (valid) {
-        if (shutdown_flag) {
-            logger_log(LOG_DEBUG, "Shutdown requested, exiting communication loop.");
-            break;
-        }
+    // Flag to determine whether to block (10-second timeout) or perform a non-blocking check.
+    bool blocking = true;
 
+    while (!shutdown_flag) {
         fd_set read_fds;
         struct timeval timeout;
-        setup_select(sock, &read_fds, &timeout);
+
+        // Use a blocking timeout if waiting for new data, otherwise non-blocking.
+        if (blocking) {
+            setup_select_timeout(sock, &read_fds, &timeout, BLOCKING_TIMEOUT_SEC, 0);
+        }
+        else {
+            setup_select_timeout(sock, &read_fds, &timeout, 0, 0);
+        }
+
         int ret = select((int)sock + 1, &read_fds, NULL, NULL, &timeout);
 
         if (ret < 0) {
@@ -226,31 +252,43 @@ void client_comms_loop(SOCKET sock, int is_server, int is_tcp, struct sockaddr_i
             break;
         }
 
-        /* If data is ready, drain the socket queue completely */
-        while (ret > 0 && FD_ISSET(sock, &read_fds)) {
-            if (handle_data_reception(sock, buffer, &buffered_length, &batch_bytes) < 0) {
+        if (ret == 0) {
+            // If in non-blocking mode, a timeout means no more data is available.
+            if (!blocking) {
+                if (buffered_length > 0) {
+                    log_buffered_data(buffer, &buffered_length, batch_bytes);
+                }
+                else {
+                    logger_log(LOG_DEBUG, "Non-blocking check: No more data available");
+                }
+                // Reset to blocking mode for the next iteration.
+                blocking = true;
+                batch_bytes = 0;
+            }
+            else {
+                // In blocking mode, a timeout simply means no data was received during the wait.
+                logger_log(LOG_DEBUG, "Timeout: No data received within %d seconds", BLOCKING_TIMEOUT_SEC);
+            }
+            continue;
+        }
+
+        // If select() indicates that data is available on the socket.
+        if (FD_ISSET(sock, &read_fds)) {
+            if (!handle_data_reception(sock, buffer, &buffered_length, &batch_bytes)) {
                 valid = false;
                 close_socket(&sock);
                 break;
             }
-            /* Check immediately if more data is available (non-blocking) */
-            FD_ZERO(&read_fds);
-            FD_SET(sock, &read_fds);
-            timeout.tv_sec = 0;
-            timeout.tv_usec = 0;
-            ret = select((int)sock + 1, &read_fds, NULL, NULL, &timeout);
-        }
-
-        /* When no more data is waiting, log the accumulated data */
-        if (ret == 0) {
-            if (buffered_length > 0)
-                log_buffered_data(buffer, &buffered_length, batch_bytes);
-            else
-                logger_log(LOG_DEBUG, "Timeout: No data received within 5 seconds");
-            batch_bytes = 0;
+            // Data was received, so switch to non-blocking mode to drain any remaining data.
+            blocking = false;
         }
     }
+
+    if (shutdown_flag) {
+        logger_log(LOG_DEBUG, "Shutdown requested, exiting communication loop.");
+    }
 }
+
 
 /**
  * Main client thread entry point.

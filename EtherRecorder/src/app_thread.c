@@ -13,12 +13,20 @@
 #include "server_manager.h"
 
 
+#define NUM_THREADS (sizeof(all_threads) / sizeof(all_threads[0]))
+
 THREAD_LOCAL static const char *thread_label = NULL;
 
 static CONDITION_VARIABLE logger_thread_condition;
 static CRITICAL_SECTION logger_thread_mutex_in_app_thread;
 volatile bool logger_ready = false;
-volatile bool shutdown_flag = false;
+
+extern volatile bool shutdown_flag;
+
+
+// forward declaration required
+void wait_for_all_other_threads_to_complete(void);
+
 
 typedef enum WaitResult {
     APP_WAIT_SUCCESS = 0,
@@ -45,6 +53,7 @@ void create_app_thread(AppThreadArgs_T *thread) {
     if (thread->pre_create_func)
         thread->pre_create_func(thread);
     platform_thread_create(&thread->thread_id, (ThreadFunc_T)app_thread, thread);
+
     if (thread->post_create_func)
         thread->post_create_func(thread);
 }
@@ -136,6 +145,104 @@ void* blank_thread_function(void* arg) {
 //     return NULL;
 // }
 
+static ClientThreadArgs_T client_thread_args = {
+    // strncpy or equivalent must be used if this is overritten by a config
+    // or we could just use a pointer, as long we were using previously allocated static memory or
+    // we are aware of the dynamic meory for deallocation
+    .server_hostname = "127.0.0.2", // 127.0.0.0/8 are loopback adresses all pointing at the local host
+    // using 127.0.0.2 here just so we can tell if this gets modified
+.port = 4200,
+.is_tcp = true
+};
+
+// Stub functions
+void* pre_create_stub(void* arg) {
+    (void)arg;
+    return 0;
+}
+
+void* post_create_stub(void* arg) {
+    (void)arg;
+    return 0;
+}
+
+void* init_stub(void* arg) {
+    (void)arg;
+    return 0;
+}
+
+void* exit_stub(void* arg) {
+    (void)arg;
+    return 0;
+}
+
+int wait_for_condition_with_timeout(void* condition, void* mutex, int timeout_ms) {
+#ifdef _WIN32
+    if (!SleepConditionVariableCS((PCONDITION_VARIABLE)condition, (PCRITICAL_SECTION)mutex, timeout_ms)) {
+        DWORD error = GetLastError();
+        if (error == ERROR_TIMEOUT) {
+            return APP_WAIT_TIMEOUT;
+        }
+        else {
+            char* errorMsg = NULL;
+            FormatMessageA(
+                FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                NULL, error, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                (LPSTR)&errorMsg, 0, NULL);
+            LocalFree(errorMsg);
+            return APP_WAIT_ERROR;
+        }
+    }
+    return APP_WAIT_SUCCESS;
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_sec += timeout_ms / 1000;
+    ts.tv_nsec += (timeout_ms % 1000) * 1000000;
+    if (ts.tv_nsec >= 1000000000) {
+        ts.tv_sec++;
+        ts.tv_nsec -= 1000000000;
+    }
+
+    int rc = pthread_cond_timedwait((pthread_cond_t*)condition, (pthread_mutex_t*)mutex, &ts);
+    if (rc == ETIMEDOUT) {
+        printf("Timeout occurred while waiting for condition variable\n");
+        return WAIT_TIMEOUT;
+    }
+    if (rc != 0) {
+        printf("Error occurred while waiting for condition variable: %s\n", strerror(rc));
+        return WAIT_ERROR;
+    }
+    return WAIT_SUCCESS;
+#endif
+}
+
+//TODO - simplify this by waiting for a signal,  set by the logger thread
+static void* init_wait_for_logger(void* arg) {
+    AppThreadArgs_T* thread_info = (AppThreadArgs_T*)arg;
+    set_thread_label(thread_info->label);
+
+    // Wait for the logger thread to signal that it is ready
+    EnterCriticalSection(&logger_thread_mutex_in_app_thread);
+    while (!logger_ready) {
+        int result = wait_for_condition_with_timeout(&logger_thread_condition, &logger_thread_mutex_in_app_thread, 5000); // 5 second timeout
+        if (result == APP_WAIT_TIMEOUT) {
+            LeaveCriticalSection(&logger_thread_mutex_in_app_thread);
+            return (void*)APP_WAIT_TIMEOUT; // Indicate timeout
+        }
+        else if (result == APP_WAIT_ERROR) {
+            LeaveCriticalSection(&logger_thread_mutex_in_app_thread);
+            return (void*)APP_WAIT_ERROR; // Indicate error
+        }
+    }
+    LeaveCriticalSection(&logger_thread_mutex_in_app_thread);
+    // Initialise the thread logger    
+    set_thread_log_file_from_config(thread_info->label);
+    logger_log(LOG_INFO, "Thread %s initialised", thread_info->label);
+
+    return (void*)APP_WAIT_SUCCESS;
+}
+
 void* logger_thread_function(void* arg) {
     AppThreadArgs_T* thread_info = (AppThreadArgs_T*)arg;
     set_thread_label(thread_info->label);
@@ -148,7 +255,7 @@ void* logger_thread_function(void* arg) {
     // TODO make platfom indepdent for sanity's sake
     WakeAllConditionVariable(&logger_thread_condition);
     LeaveCriticalSection(&logger_thread_mutex_in_app_thread);
-    
+
 
     LogEntry_T entry;
     bool running = true; // Flag to handle graceful shutdown later
@@ -173,63 +280,12 @@ void* logger_thread_function(void* arg) {
     // logger should only shut off when all other threads have shut down
     // so we need to hear from the other threads that they are done
 
-    sleep_seconds(20000);
-
+    wait_for_all_other_threads_to_complete();
+    
     logger_log(LOG_INFO, "Logger thread shutting down.");
     return NULL;
 }
 
-void request_shutdown(void) {
-    EnterCriticalSection(&shutdown_mutex);
-    shutdown_flag = true;
-    WakeAllConditionVariable(&shutdown_condition);
-    LeaveCriticalSection(&shutdown_mutex);
-}
-
-bool wait_for_shutdown(int timeout_ms) {
-    EnterCriticalSection(&shutdown_mutex);
-    BOOL result = SleepConditionVariableCS(&shutdown_condition, &shutdown_mutex, timeout_ms);
-    LeaveCriticalSection(&shutdown_mutex);
-    return result;
-}
-
-// Stub functions
-void* pre_create_stub(void* arg ) {
-    (void) arg;
-    return 0;
-}
-
-void* post_create_stub(void* arg) {
-    (void) arg;
-    return 0;
-}
-
-void* init_stub(void* arg) {
-    (void) arg;
-    return 0; 
-}
-
-void* exit_stub(void* arg) {
-    (void) arg;
-    return 0;
-}
-
-static void* init_wait_for_logger(void* arg);
-
-static ServerThreadArgs_T server_thread_args = {
-    .port = 4200,
-    .is_tcp = true
-};
-
-static ClientThreadArgs_T client_thread_args = {
-    // strncpy or equivalent must be used if this is overritten by a config
-    // or we could just use a pointer, as long we were using previously allocated static memory or
-    // we are aware of the dynamic meory for deallocation
-    .server_hostname = "127.0.0.2", // 127.0.0.0/8 are loopback adresses all pointing at the local host
-                                    // using 127.0.0.2 here just so we can tell if this gets modified
-    .port = 4200,
-    .is_tcp = true
-};
 
 static AppThreadArgs_T all_threads[] = {
     {
@@ -293,78 +349,97 @@ static AppThreadArgs_T all_threads[] = {
     }
 };
 
-int wait_for_condition_with_timeout(void* condition, void* mutex, int timeout_ms) {
-#ifdef _WIN32
-    if (!SleepConditionVariableCS((PCONDITION_VARIABLE)condition, (PCRITICAL_SECTION)mutex, timeout_ms)) {
-        DWORD error = GetLastError();
-        if (error == ERROR_TIMEOUT) {
-            return APP_WAIT_TIMEOUT;
-        } else {
-            char* errorMsg = NULL;
-            FormatMessageA(
-                FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-                NULL, error, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-                (LPSTR)&errorMsg, 0, NULL);
-            LocalFree(errorMsg);
-            return APP_WAIT_ERROR;
-        }
-    }
-    return APP_WAIT_SUCCESS;
-#else
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    ts.tv_sec += timeout_ms / 1000;
-    ts.tv_nsec += (timeout_ms % 1000) * 1000000;
-    if (ts.tv_nsec >= 1000000000) {
-        ts.tv_sec++;
-        ts.tv_nsec -= 1000000000;
+
+void wait_for_all_other_threads_to_complete(void) {
+    int num_threads = sizeof(all_threads) / sizeof(all_threads[0]);
+
+    HANDLE threadHandles[NUM_THREADS-1];
+    memset(threadHandles, 0, sizeof(threadHandles));
+
+    // Build an array of thread handles from your structure.
+    for (size_t i = 0; i < NUM_THREADS-1; i++) {
+        threadHandles[i] = all_threads[i].thread_id;
     }
 
-    int rc = pthread_cond_timedwait((pthread_cond_t*)condition, (pthread_mutex_t*)mutex, &ts);
-    if (rc == ETIMEDOUT) {
-        printf("Timeout occurred while waiting for condition variable\n");
-        return WAIT_TIMEOUT;
+    // Wait for all threads to complete.
+    DWORD waitResult = WaitForMultipleObjects(NUM_THREADS-1, threadHandles, TRUE, INFINITE);
+
+    if (waitResult == WAIT_FAILED) {
+        DWORD err = GetLastError();
+        logger_log(LOG_ERROR, "WaitForMultipleObjects failed: %lu\n", err);
+        // Handle error appropriately.
     }
-    if (rc != 0) {
-        printf("Error occurred while waiting for condition variable: %s\n", strerror(rc));
-        return WAIT_ERROR;
+    else {
+        // All threads have finished.
+        logger_log(LOG_INFO, "Logger has seen all other threads complete");
     }
-    return WAIT_SUCCESS;
-#endif
+
+    // TODO drain the log queue
+
+    LogEntry_T entry;
+
+    while (log_queue_pop(&global_log_queue, &entry)) {
+
+        if (*entry.thread_label == '\0')
+            printf("Logger thread processing log from: NULL\n");
+
+        log_now(&entry);
+    }
+
+    // we're done
 }
 
-static void* init_wait_for_logger(void* arg) {
-    AppThreadArgs_T* thread_info = (AppThreadArgs_T*)arg;
-    set_thread_label(thread_info->label);    
-    
-    // Wait for the logger thread to signal that it is ready
-    EnterCriticalSection(&logger_thread_mutex_in_app_thread);
-    while (!logger_ready) {
-        int result = wait_for_condition_with_timeout(&logger_thread_condition, &logger_thread_mutex_in_app_thread, 5000); // 5 second timeout
-        if (result == APP_WAIT_TIMEOUT) {
-            LeaveCriticalSection(&logger_thread_mutex_in_app_thread);
-            return (void*)APP_WAIT_TIMEOUT; // Indicate timeout
-        } else if (result == APP_WAIT_ERROR) {
-            LeaveCriticalSection(&logger_thread_mutex_in_app_thread);
-            return (void*)APP_WAIT_ERROR; // Indicate error
+
+static void* init_wait_for_logger(void* arg);
+
+static ServerThreadArgs_T server_thread_args = {
+    .port = 4200,
+    .is_tcp = true
+};
+
+void wait_for_all_threads_to_complete(void) {
+    int num_threads = sizeof(all_threads) / sizeof(all_threads[0]);
+
+    HANDLE threadHandles[NUM_THREADS];
+	memset(threadHandles, 0, sizeof(threadHandles));
+
+    // Build an array of thread handles from your structure.
+    for (size_t i = 0; i < NUM_THREADS; i++) {
+        threadHandles[i] = all_threads[i].thread_id;
+    }
+
+    // Wait for all threads to complete.
+    DWORD waitResult = WaitForMultipleObjects(NUM_THREADS, threadHandles, TRUE, INFINITE);
+
+    if (waitResult == WAIT_FAILED) {
+        DWORD err = GetLastError();
+        fprintf(stderr, "WaitForMultipleObjects failed: %lu\n", err);
+        // Handle error appropriately.
+    }
+    else {
+        // All threads have finished.
+        printf("All threads have completed.\n");
+    }
+
+    // Close the thread handled, done with them.
+    for (size_t i = 0; i < num_threads; i++) {
+        if (threadHandles[i] != NULL) {
+            CloseHandle(threadHandles[i]);
         }
     }
-    LeaveCriticalSection(&logger_thread_mutex_in_app_thread);
-    // Initialise the thread logger    
-    set_thread_log_file_from_config(thread_info->label);
-    logger_log(LOG_INFO, "Thread %s initialised", thread_info->label);
-
-    return (void*)APP_WAIT_SUCCESS;
 }
+
 
 void start_threads(void) {
     // Initialise the logger condition and mutex
     InitializeConditionVariable(&logger_thread_condition);
     InitializeCriticalSection(&logger_thread_mutex_in_app_thread);
 
-    int num_threads = sizeof(all_threads) / sizeof(all_threads[0]);
+    //int num_threads = sizeof(all_threads) / sizeof(all_threads[0]);
 
-    for (int i = 0; i < num_threads; i++) {
+    for (int i = 0; i < NUM_THREADS; i++) {
         create_app_thread(&all_threads[i]);
+		// I need the handles, so I can wait for them to finish later
+		HANDLE thread_handle = all_threads[i].thread_id;
     }
 }

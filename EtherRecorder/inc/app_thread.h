@@ -20,12 +20,6 @@ extern "C" {
 #endif
 
 
-extern CONDITION_VARIABLE shutdown_condition;
-extern CRITICAL_SECTION shutdown_mutex;
-
-void request_shutdown(void);
-bool wait_for_shutdown(int timeout_ms);
-
 /**
  * @brief Function pointer type for pre-create functions.
  * @param arg Argument to the function.

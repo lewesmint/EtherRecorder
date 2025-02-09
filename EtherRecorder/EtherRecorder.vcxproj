@@ -40,6 +40,7 @@
     <ClCompile Include="src\platform_threads.c" />
     <ClCompile Include="src\platform_utils.c" />
     <ClCompile Include="src\server_manager.c" />
+    <ClCompile Include="src\shutdown_handler.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="inc\app_config.h" />
@@ -55,6 +56,7 @@
     <ClInclude Include="inc\platform_threads.h" />
     <ClInclude Include="inc\platform_utils.h" />
     <ClInclude Include="inc\server_manager.h" />
+    <ClInclude Include="inc\shutdown_handler.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\config.ini" />

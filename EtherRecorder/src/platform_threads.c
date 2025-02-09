@@ -14,11 +14,12 @@ DWORD WINAPI thread_start(LPVOID arg) {
 }
 
 int platform_thread_create(PlatformThread_T *thread, ThreadFunc_T func, void *arg) {
+	// be sure to release this memory
     ThreadWrapper_T *wrapper = (ThreadWrapper_T *)malloc(sizeof(ThreadWrapper_T));
     if (!wrapper) return -1;
     wrapper->func = func;
     wrapper->arg = arg;
-    *thread = CreateThread(NULL, 0, thread_start, wrapper, 0, NULL);
+    *thread = CreateThread(NULL, 0, thread_start, wrapper, 0, NULL);   
     return (*thread == NULL) ? -1 : 0;
 }
 

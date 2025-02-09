@@ -48,15 +48,17 @@ void _logger_log(LogLevel level, const char* format, ...);
  * In debug builds, if the log level is LOG_TRACE (or if g_trace_all is true),
  * prepend the file and line information to the log message.
  */
+
+#define _logger_log_helper(level, fmt, ...) _logger_log(level, fmt, __VA_ARGS__)
+
 #define logger_log(level, fmt, ...)                                \
-        do {                                                           \
-            if ((level) == LOG_TRACE || g_trace_all) {                 \
-                _logger_log(level, "[%s:%d] " fmt, __FILE__, __LINE__,  \
-                            ##__VA_ARGS__);                              \
-            } else {                                                   \
-                _logger_log(level, fmt, ##__VA_ARGS__);            \
-            }                                                          \
-        } while (0)
+    do {                                                           \
+        if ((level) == LOG_TRACE || g_trace_all) {                 \
+            _logger_log_helper(level, "[%s:%d] " fmt, __FILE__, __LINE__, __VA_ARGS__); \
+        } else {                                                   \
+            _logger_log_helper(level, fmt, __VA_ARGS__);           \
+        }                                                          \
+    } while (0)
 #else
 /*
  * In non-debug builds, always use the standard logging function without
