@@ -38,6 +38,8 @@ typedef struct DummyPayload
 } DummyPayload;
 
 int generateRandomData(DummyPayload* packet);
+
+SOCKET setup_listening_server_socket(struct sockaddr_in* addr, int port);
 SOCKET setup_socket(bool is_server, bool is_tcp, struct sockaddr_in *addr, struct sockaddr_in *client_addr, const char *host, int port);
 PlatformSocketError connect_with_timeout(SOCKET sock, struct sockaddr_in *server_addr, int timeout_seconds);
 

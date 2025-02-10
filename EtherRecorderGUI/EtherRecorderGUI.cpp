@@ -150,4 +150,3 @@ CString CEtherRecorderGUIApp::Get_IP() {
 CString CEtherRecorderGUIApp::Get_Port() {
 	return m_szPort;
 }
-

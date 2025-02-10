@@ -57,6 +57,12 @@
     <ClCompile Include="src\shutdown_handler.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\command_interface.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\command_processor.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="inc\logger.h">
@@ -101,9 +107,15 @@
     <ClInclude Include="inc\shutdown_handler.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="inc\command_interface.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\command_processor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\config.ini">
+    <None Include="config.ini">
       <Filter>Resource Files</Filter>
     </None>
   </ItemGroup>

@@ -11,6 +11,8 @@
 #include "logger.h"
 #include "client_manager.h"
 #include "server_manager.h"
+#include "command_interface.h"
+#include "app_config.h"
 
 
 #define NUM_THREADS (sizeof(all_threads) / sizeof(all_threads[0]))
@@ -145,15 +147,18 @@ void* blank_thread_function(void* arg) {
 //     return NULL;
 // }
 
+
+static char test_send_data [1000];
+
 static ClientThreadArgs_T client_thread_args = {
-    // strncpy or equivalent must be used if this is overritten by a config
-    // or we could just use a pointer, as long we were using previously allocated static memory or
-    // we are aware of the dynamic meory for deallocation
-    .server_hostname = "127.0.0.2", // 127.0.0.0/8 are loopback adresses all pointing at the local host
-    // using 127.0.0.2 here just so we can tell if this gets modified
-.port = 4200,
-.is_tcp = true
-};
+    .server_hostname = "127.0.0.2",
+    .send_test_data = false,
+    .data = &test_send_data,
+    .data_size = sizeof(test_send_data),
+    .send_interval_ms = 2000,
+    .port = 4200,
+    .is_tcp = true
+    };
 
 // Stub functions
 void* pre_create_stub(void* arg) {
@@ -328,16 +333,15 @@ static AppThreadArgs_T all_threads[] = {
     //     .init_func = init_wait_for_logger,
     //     .exit_func = exit_stub
     // },
-    // {
-    //     .label = "GENERIC-3",
-    //     // .func = generic_thread_function,
-    //     .func = blank_thread_function,
-    //     .data = NULL,
-    //     .pre_create_func = pre_create_stub,
-    //     .post_create_func = post_create_stub,
-    //     .init_func = init_wait_for_logger,
-    //     .exit_func = exit_stub
-    // },
+     {
+         .label = "COMMAND_INTERFACE",
+         .func = command_interface_thread,
+         .data = NULL,
+         .pre_create_func = pre_create_stub,
+         .post_create_func = post_create_stub,
+         .init_func = init_wait_for_logger,
+         .exit_func = exit_stub
+     },
     {
         .label = "LOGGER",
         .func = logger_thread_function,
@@ -353,16 +357,22 @@ static AppThreadArgs_T all_threads[] = {
 void wait_for_all_other_threads_to_complete(void) {
     int num_threads = sizeof(all_threads) / sizeof(all_threads[0]);
 
-    HANDLE threadHandles[NUM_THREADS-1];
+    HANDLE threadHandles[NUM_THREADS];
     memset(threadHandles, 0, sizeof(threadHandles));
 
-    // Build an array of thread handles from your structure.
-    for (size_t i = 0; i < NUM_THREADS-1; i++) {
-        threadHandles[i] = all_threads[i].thread_id;
+    DWORD j = 0;
+
+    // Build an array of thread handles from structure.
+    for (size_t i = 0; i < NUM_THREADS; i++) {
+		if (all_threads[i].supressed ||
+            str_cmp_nocase(all_threads[i].label, get_thread_label())) {
+			continue;
+		}
+        threadHandles[j] = all_threads[i].thread_id;
     }
 
     // Wait for all threads to complete.
-    DWORD waitResult = WaitForMultipleObjects(NUM_THREADS-1, threadHandles, TRUE, INFINITE);
+    DWORD waitResult = WaitForMultipleObjects(j, threadHandles, TRUE, INFINITE);
 
     if (waitResult == WAIT_FAILED) {
         DWORD err = GetLastError();
@@ -398,30 +408,37 @@ static ServerThreadArgs_T server_thread_args = {
 };
 
 void wait_for_all_threads_to_complete(void) {
-    int num_threads = sizeof(all_threads) / sizeof(all_threads[0]);
+    uint32_t num_threads = sizeof(all_threads) / sizeof(all_threads[0]);
 
     HANDLE threadHandles[NUM_THREADS];
-	memset(threadHandles, 0, sizeof(threadHandles));
+    memset(threadHandles, 0, sizeof(threadHandles));
 
-    // Build an array of thread handles from your structure.
+    DWORD j = 0;
+    // Build an array of thread handles from structure, careful of suppressed thread
     for (size_t i = 0; i < NUM_THREADS; i++) {
-        threadHandles[i] = all_threads[i].thread_id;
+        if (all_threads[i].supressed) {
+            continue;
+        }
+        threadHandles[j] = all_threads[i].thread_id;
+        j++;
     }
 
+	if (j == 0) {
+		return;
+	}
     // Wait for all threads to complete.
-    DWORD waitResult = WaitForMultipleObjects(NUM_THREADS, threadHandles, TRUE, INFINITE);
+    DWORD waitResult = WaitForMultipleObjects(j, threadHandles, TRUE, INFINITE);
 
     if (waitResult == WAIT_FAILED) {
         DWORD err = GetLastError();
         fprintf(stderr, "WaitForMultipleObjects failed: %lu\n", err);
         // Handle error appropriately.
-    }
-    else {
+    } else {
         // All threads have finished.
         printf("All threads have completed.\n");
     }
 
-    // Close the thread handled, done with them.
+    // Close the thread handles, done with them.
     for (size_t i = 0; i < num_threads; i++) {
         if (threadHandles[i] != NULL) {
             CloseHandle(threadHandles[i]);
@@ -430,16 +447,41 @@ void wait_for_all_threads_to_complete(void) {
 }
 
 
+void check_for_suppression(void) {
+    const char* suppressed_list = get_config_string("debug", "suppress_threads", "");
+
+    char suppressed_list_copy[CONFIG_MAX_VALUE_LENGTH];
+    strncpy(suppressed_list_copy, suppressed_list, CONFIG_MAX_VALUE_LENGTH - 1);
+    suppressed_list_copy[CONFIG_MAX_VALUE_LENGTH - 1] = '\0'; // Ensure null-termination
+
+    char* context = NULL;
+    char* token = strtok_s(suppressed_list_copy, ",", &context);
+
+    while (token != NULL) {
+        for (int i = 0; i < NUM_THREADS; i++) {
+            if (str_cmp_nocase(all_threads[i].label, token) == 0) {
+                all_threads[i].supressed = true;
+            }
+        }
+        token = strtok_s(NULL, ",", &context); // Get next token
+    }
+}
+
 void start_threads(void) {
     // Initialise the logger condition and mutex
     InitializeConditionVariable(&logger_thread_condition);
     InitializeCriticalSection(&logger_thread_mutex_in_app_thread);
 
+    check_for_suppression();
+
+    const char* get_config_string(const char* section, const char* key, const char* default_value);
     //int num_threads = sizeof(all_threads) / sizeof(all_threads[0]);
 
     for (int i = 0; i < NUM_THREADS; i++) {
-        create_app_thread(&all_threads[i]);
-		// I need the handles, so I can wait for them to finish later
-		HANDLE thread_handle = all_threads[i].thread_id;
+        if (!all_threads[i].supressed) {
+            create_app_thread(&all_threads[i]);
+            // I need the handles, so I can wait for them to finish later
+            HANDLE thread_handle = all_threads[i].thread_id;
+        }
     }
 }

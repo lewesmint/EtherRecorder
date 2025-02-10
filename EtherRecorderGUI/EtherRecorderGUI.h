@@ -33,6 +33,7 @@ private:
 	CString m_szIP;
 	CString m_szPort;
 	BOOL LoadProfile();
+public:
 };
 
 extern CEtherRecorderGUIApp theApp;

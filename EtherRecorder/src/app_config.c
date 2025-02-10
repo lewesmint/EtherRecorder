@@ -15,12 +15,12 @@
 #define MAX_LINE_LENGTH 256
 #define MAX_SECTION_LENGTH 50
 #define MAX_KEY_LENGTH 50
-#define MAX_VALUE_LENGTH 200
+#define CONFIG_MAX_VALUE_LENGTH 200
 
 typedef struct ConfigEntry {
     char section[MAX_SECTION_LENGTH];
     char key[MAX_KEY_LENGTH];
-    char value[MAX_VALUE_LENGTH];
+    char value[CONFIG_MAX_VALUE_LENGTH];
     struct ConfigEntry *next;
 } ConfigEntry;
 

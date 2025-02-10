@@ -41,7 +41,7 @@ BOOL WINAPI console_ctrl_handler(DWORD signal) {
 /**
  * @brief Installs the console control handler.
  *
- * This should be called once during your application's initialisation (e.g. in app_init()).
+ * This should be called once application's initialisation (e.g. in app_init()).
  */
 void install_shutdown_handler(void) {
 

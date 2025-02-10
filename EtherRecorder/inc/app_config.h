@@ -9,6 +9,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#define CONFIG_MAX_VALUE_LENGTH 200
 
 /**
  * @brief Loads the configuration from a file.

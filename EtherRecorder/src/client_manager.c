@@ -2,6 +2,7 @@
 
 #include <stdio.h>      // for perror, snprintf
 #include <string.h>     // for memcpy, memset, strncpy, memmove, strerror
+#include <time.h>       // for time_t, time, ctime
 
 #include "common_socket.h"
 #include "app_thread.h"
@@ -219,7 +220,7 @@ void setup_select_timeout(SOCKET sock, fd_set* read_fds, struct timeval* timeout
  * @param is_tcp      Unused flag indicating if the protocol is TCP.
  * @param client_addr Unused pointer to client address information.
  */
-void client_comms_loop(SOCKET sock, int is_server, int is_tcp, struct sockaddr_in* client_addr) {
+void client_comms_loop(SOCKET sock, int is_server, int is_tcp, struct sockaddr_in* client_addr, ClientThreadArgs_T* client_info) {
     bool valid = true;
     char buffer[BUFFER_SIZE];
     int buffered_length = 0;
@@ -283,6 +284,22 @@ void client_comms_loop(SOCKET sock, int is_server, int is_tcp, struct sockaddr_i
             blocking = false;
         }
     }
+    // Check if we should send periodic data.
+    time_t last_send_time = 0;
+    if (client_info->send_test_data && client_info->data != NULL && client_info->send_interval_ms > 0) {
+        time_t now = time(NULL);
+        if (difftime(now, last_send_time) >= client_info->send_interval_ms) {
+            int sent = send(sock, client_info->data, client_info->data_size, 0);
+            if (sent == SOCKET_ERROR) {
+                logger_log(LOG_ERROR, "Send error while sending periodic data.");
+            }
+            else {
+                logger_log(LOG_INFO, "Periodic send: sent %d bytes", sent);
+            }
+            last_send_time = now;
+        }
+    }
+
 
     if (shutdown_flag) {
         logger_log(LOG_DEBUG, "Shutdown requested, exiting communication loop.");
@@ -298,13 +315,15 @@ void* clientMainThread(void* arg) {
     set_thread_label(thread_info->label);
     ClientThreadArgs_T* client_info = (ClientThreadArgs_T*)thread_info->data;
 
-    // Check for the server hostname in the configuration.
+    // Check for the server hostname in the configuration.    
     const char* config_server_hostname = get_config_string("network", "client.server_hostname", NULL);
     if (config_server_hostname) {
         strncpy(client_info->server_hostname, config_server_hostname, sizeof(client_info->server_hostname));
         client_info->server_hostname[sizeof(client_info->server_hostname) - 1] = '\0';
     }
     client_info->port = get_config_int("network", "client.port", client_info->port);
+    client_info->send_interval_ms = get_config_int("network", "client.send_interval_ms", client_info->send_interval_ms);
+    client_info->send_test_data = get_config_bool("network", "client.send_test_data", false);
     logger_log(LOG_INFO, "Client Manager will attempt to connect to Server: %s, port: %d", client_info->server_hostname, client_info->port);
 
     int port = client_info->port;
@@ -325,7 +344,7 @@ void* clientMainThread(void* arg) {
     }
 
     // Start the communication loop.
-    client_comms_loop(sock, is_server, is_tcp, &client_addr);
+    client_comms_loop(sock, is_server, is_tcp, &client_addr, client_info);
     close_socket(&sock);
 
     logger_log(LOG_INFO, "CLIENT: Exiting client thread.");

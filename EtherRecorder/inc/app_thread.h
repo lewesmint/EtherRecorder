@@ -60,6 +60,7 @@ typedef struct AppThreadArgs_T {
     PostCreateFunc_T post_create_func;   ///< Post-create function
     InitFunc_T init_func;                ///< Initialisation function
     ExitFunc_T exit_func;                ///< Exit function
+    bool supressed;                       ///< Supress the thread
 } AppThreadArgs_T;
 
 /**
@@ -79,6 +80,11 @@ const char* get_thread_label();
  * @param label The label to set.
  */
 void set_thread_label(const char *label);
+
+/**
+ * @brief Waits for all other threads to complete.
+ */
+void wait_for_all_threads_to_complete(void);
 
 #ifdef __cplusplus
 }

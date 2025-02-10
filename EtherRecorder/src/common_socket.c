@@ -74,6 +74,27 @@ int generateRandomData(DummyPayload* packet) {
            sizeof(end_marker);             // 4 bytes
 }
 
+SOCKET setup_listening_server_socket(struct sockaddr_in* addr, int port) {
+
+    SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock == INVALID_SOCKET) {
+        return PLATFORM_SOCKET_ERROR_CREATE;
+    }
+
+    addr->sin_family = AF_INET;
+    addr->sin_port = htons(port);
+    addr->sin_addr.s_addr = INADDR_ANY; // Bind to all available interfaces
+    if (bind(sock, (struct sockaddr*)addr, sizeof(*addr)) == SOCKET_ERROR) {
+        close_socket(&sock);
+        return PLATFORM_SOCKET_ERROR_BIND;
+    }
+    if (listen(sock, SOMAXCONN) == SOCKET_ERROR) {
+        close_socket(&sock);
+        return PLATFORM_SOCKET_ERROR_LISTEN;    
+    }
+    return sock;
+}
+
 /**
  * Creates and sets up a socket (server or client).
  * 
@@ -224,7 +245,7 @@ PlatformSocketError connect_with_timeout(SOCKET sock, struct sockaddr_in *server
 //    return 0;
 //}
 
-// Include your socket headers here (e.g. winsock2.h or sys/socket.h, etc.)
+// Include socket headers here (e.g. winsock2.h or sys/socket.h, etc.)
 
 
 // Define an arbitrary buffer size for TCP stream accumulation.
@@ -237,7 +258,7 @@ PlatformSocketError connect_with_timeout(SOCKET sock, struct sockaddr_in *server
 // Stub function to process a complete payload.
 void process_payload(const char *payload, unsigned int payload_length) {
     logger_log(LOG_DEBUG, "Processing payload of length %u", payload_length);
-    // Insert your processing code here.
+    // Insert processing code here.
 }
 
 /**

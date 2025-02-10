@@ -250,18 +250,20 @@ static void publish_log_entry(const LogEntry_T* entry, FILE* log_output) {
      * ensuring that leading zeros are preserved.
      */
     if (fractional_width > 0) {
-        fprintf(log_output, "%0*llu %s.%0*lld %s%s%s: %s\n",
+        fprintf(log_output, "%0*llu %s.%0*lld %s%s%s: [%s] %s\n",
             index_width, entry->index,
             time_buffer,
             fractional_width, adjusted_time,
             log_colour, log_level_to_string(entry->level), reset_colour,
+            entry->thread_label,
             entry->message);
     }
     else {
-        fprintf(log_output, "%0*llu %s %s%s%s: %s\n",
+        fprintf(log_output, "%0*llu %s %s%s%s: [%s] %s\n",
             index_width, entry->index,
             time_buffer,
             log_colour, log_level_to_string(entry->level), reset_colour,
+            entry->thread_label,
             entry->message);
     }
 

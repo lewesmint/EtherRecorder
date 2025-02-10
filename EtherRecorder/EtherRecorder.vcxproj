@@ -30,6 +30,8 @@
     <ClCompile Include="src\app_config.c" />
     <ClCompile Include="src\app_thread.c" />
     <ClCompile Include="src\client_manager.c" />
+    <ClCompile Include="src\command_interface.c" />
+    <ClCompile Include="src\command_processor.c" />
     <ClCompile Include="src\common_socket.c" />
     <ClCompile Include="src\generic_thread.c" />
     <ClCompile Include="src\logger.c" />
@@ -47,6 +49,8 @@
     <ClInclude Include="inc\app_error.h" />
     <ClInclude Include="inc\app_thread.h" />
     <ClInclude Include="inc\client_manager.h" />
+    <ClInclude Include="inc\command_interface.h" />
+    <ClInclude Include="inc\command_processor.h" />
     <ClInclude Include="inc\common_socket.h" />
     <ClInclude Include="inc\common_winsock.h" />
     <ClInclude Include="inc\logger.h" />
@@ -59,7 +63,7 @@
     <ClInclude Include="inc\shutdown_handler.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\config.ini" />
+    <None Include="config.ini" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="..\logs\client.log" />

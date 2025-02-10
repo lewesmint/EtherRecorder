@@ -7,7 +7,9 @@
 
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <windows.h>
+
 
 
 #define LOG_MSG_BUFFER_SIZE 1024 // Buffer size for log messages
@@ -18,7 +20,6 @@
     * Global runtime flag to control whether all log messages should
     * include file and line information.
     *
-    * Assume this flag is set up by your configuration code.
 */
  extern bool g_trace_all;
 #endif // _DEBUG
