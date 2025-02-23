@@ -1,15 +1,16 @@
 #include "log_queue.h"
 #include "logger.h"
-//#include "platform_mutex.h"
+#include "platform_mutex.h"
 //
 //#include <string.h>
 //#include <stdio.h>
-#include <windows.h> // Include Windows API for atomic operations
+// #include <windows.h> // Include Windows API for atomic operations
 
 //#include "platform_threads.h"
-//#include "platform_utils.h"
+#include "platform_utils.h"
 //#include "app_thread.h" // Include the app_thread header
 
+extern PlatformMutex_T logging_mutex; // Mutex for thread safety
 LogQueue_T global_log_queue; // Define the log queue
 
 /**
@@ -32,12 +33,23 @@ bool log_queue_push(LogQueue_T *log_queue, const LogEntry_T *entry) {
 
     // Check if the queue is full
     if (next_head == log_queue->tail) {
+        lock_mutex(&logging_mutex);
         // calling logger_log would be recursive, and lead to probable stack overflow
-
-        LogEntry_T entry;
-        create_log_entry(&entry, LOG_ERROR, "Log queue overflow. Discarding oldest log entry.");
-        log_now(&entry);
-        InterlockedExchange(&log_queue->tail, (log_queue->tail + 1) % LOG_QUEUE_SIZE); // Discard oldest entry
+        int purge_count = 3;
+        LogEntry_T entry_1;
+        char msg[LOG_MSG_BUFFER_SIZE];
+        snprintf(msg, sizeof(msg), "Log queue overflow. Publishing oldest %d log entries immediately", purge_count);
+        create_log_entry(&entry_1, LOG_ERROR, msg);
+        log_now(&entry_1);
+        while (purge_count > 0) {
+            LogEntry_T popped_entry;
+            log_queue_pop(log_queue, &popped_entry);
+            log_now(&popped_entry);
+            purge_count--;
+        }
+        LogEntry_T entry_2;
+        create_log_entry(&entry_2, LOG_ERROR, "Log queue overflow. Purged complete");
+        unlock_mutex(&logging_mutex);
     }
 
     // Copy the pre-constructed entry into the queue

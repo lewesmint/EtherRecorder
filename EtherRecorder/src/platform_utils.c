@@ -165,9 +165,30 @@ int create_directories(const char* path) {
     return (platform_mkdir(tmp) != 0 && errno != EEXIST) ? -1 : 0;
 }
 
+#ifdef _WIN32
+void DisableQuickEditMode() {
+    HANDLE hInput;
+    DWORD prev_mode;
+    hInput = GetStdHandle(STD_INPUT_HANDLE);
+    GetConsoleMode(hInput, &prev_mode);
+    SetConsoleMode(hInput, prev_mode & ENABLE_EXTENDED_FLAGS);
+}
+#endif //
+
+#ifdef _WIN32
+void EmableVTMode() {
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    DWORD dwMode = 0;
+    GetConsoleMode(hOut, &dwMode);
+    dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+    SetConsoleMode(hOut, dwMode);
+}
+#endif //
+
 void init_console(void) {
 #ifdef _WIN32
-    // Example: Disable Quick Edit mode on Windows
+    DisableQuickEditMode();
+    EmableVTMode();
 #endif
 }
 

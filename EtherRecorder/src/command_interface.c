@@ -10,11 +10,8 @@
 #include "app_config.h"
 #include "app_thread.h"
 #include "command_processor.h"
+#include "shutdown_handler.h"
 
-extern volatile bool shutdown_flag;
-
-// Global shutdown event handle.
-extern HANDLE shutdown_event = NULL;
 
 uint32_t gs_listening_port = 4150;
 
@@ -355,9 +352,8 @@ ProcessResult process_send_ack(SOCKET sock, uint8_t* buffer, size_t* length) {
  * @brief Main command interface loop handling the state machine.
  */
 void command_interface_loop(SOCKET client_sock, struct sockaddr_in* client_addr) {
-    extern volatile bool shutdown_flag;  // Assumed to be defined elsewhere
 
-    while (!shutdown_flag) {
+    while (!shutdown_signalled()) {
         int bytes = buffered_recv(client_sock);
         if (bytes < 0) {
             logger_log(LOG_ERROR, "Connection closed.");
@@ -426,14 +422,14 @@ void* command_interface_thread(void* arg) {
     logger_log(LOG_INFO, "%s is listening on port %d", get_thread_label(), gs_listening_port);
 
     // Main loop: Accept and handle client connections
-    while (!shutdown_flag) {
+    while (!shutdown_signalled()) {
         struct sockaddr_in client_addr;
         int client_len = sizeof(client_addr);  // Use int for Windows compatibility
         memset(&client_addr, 0, sizeof(client_addr));
 
         SOCKET client_sock = accept(sock, (struct sockaddr*)&client_addr, &client_len);
         if (client_sock == INVALID_SOCKET) {
-            if (shutdown_flag)
+            if (shutdown_signalled())
                 break;  // Graceful shutdown
 
             logger_log(LOG_ERROR, "Accept failed.");

@@ -96,7 +96,7 @@ typedef struct LogEntry_T {
  */
 bool init_logger_from_config(char *logger_init_result);
 
-void init_timestamp_system(void);
+void init_thread_timestamp_system(void);
 
 void create_log_entry(LogEntry_T* entry, LogLevel level, const char* message);
 

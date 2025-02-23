@@ -11,7 +11,6 @@
 #include "app_thread.h"
 #include "command_processor.h"
 
-extern volatile bool shutdown_flag;
 
 // Global shutdown event handle.
 extern HANDLE shutdown_event = NULL;
@@ -352,7 +351,6 @@ ProcessResult process_wait_for_message(SOCKET sock, uint8_t* buffer, size_t* len
  * @brief Main command interface loop handling the state machine.
  */
 void command_interface_loop(SOCKET client_sock, struct sockaddr_in* client_addr) {
-    extern volatile bool shutdown_flag;  // Assumed to be defined elsewhere
 
     while (!shutdown_flag) {
         int bytes = buffered_recv(client_sock);

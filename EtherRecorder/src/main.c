@@ -11,7 +11,7 @@
 #include "shutdown_handler.h"
 
 
-extern volatile bool shutdown_flag;
+extern bool wait_for_all_threads_to_complete(int time_ms);
 
 CONDITION_VARIABLE shutdown_condition;
 CRITICAL_SECTION shutdown_mutex;
@@ -63,7 +63,7 @@ int print_working_directory() {
 }
 
 static AppError init_app() {
-    init_timestamp_system();
+    init_thread_timestamp_system();
     set_thread_label("MAIN");
     install_shutdown_handler();
 
@@ -134,7 +134,20 @@ int main(int argc, char* argv[]) {
   //   // to be indicated, do it, then wait for all the thread to complete
 	 //wait_for_shutdown_signal(INFINITE);
 
-	wait_for_all_threads_to_complete();
+//    while (true) {
+//         sleep_seconds(5);
+//           if (wait_for_all_threads_to_complete()) {
+//         if (wait_for_shutdown_signal(INFINITE)) {
+//              logger_log(LOG_DEBUG, "HEARTBEAT");
+//         }
+//     }
 
+    while (true) {
+        if (wait_for_all_threads_to_complete(7620)) {
+            break;
+        } else {
+            logger_log(LOG_DEBUG, "HEARTBEAT");
+        }
+    }
     return app_exit();
 }

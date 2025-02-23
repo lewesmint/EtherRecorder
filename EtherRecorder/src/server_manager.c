@@ -8,8 +8,7 @@
 #include "app_thread.h"
 #include "logger.h"
 
-// Global shutdown flag (shared across all threads)
-extern volatile bool shutdown_flag;
+extern bool shutdown_signalled(void);
 
 void* serverListenerThread(void* arg) {
     AppThreadArgs_T* thread_info = (AppThreadArgs_T*)arg;
@@ -35,10 +34,10 @@ void* serverListenerThread(void* arg) {
     logger_log(LOG_INFO, "Server is listening on port %d", port);
 
     // Main loop: Accept and handle client connections
-    while (!shutdown_flag) {
+    while (!shutdown_signalled()) {
         SOCKET client_sock = accept(sock, (struct sockaddr *)&client_addr, &client_len);
         if (client_sock == INVALID_SOCKET) {
-            if (shutdown_flag)
+            if (shutdown_signalled())
                 break;  // Graceful shutdown
 
             logger_log(LOG_ERROR, "Accept failed.");

@@ -10,12 +10,102 @@
 #include "platform_utils.h"
 #include "app_config.h"
 
-extern volatile bool shutdown_flag;
+// External declarations for stub functions
+extern void* pre_create_stub(void* arg);
+extern void* post_create_stub(void* arg);
+extern void* init_stub(void* arg);
+extern void* exit_stub(void* arg);
+extern void* init_wait_for_logger(void* arg);
+extern bool shutdown_signalled(void);
 
+// TODO consider using a dynamic buffer, adjusting to conditions
 #define BUFFER_SIZE               8192
 #define SOCKET_ERROR_BUFFER_SIZE  256
 #define BLOCKING_TIMEOUT_SEC 10  // Blocking timeout in seconds
 
+static bool suppress_client_send_data = true;
+
+typedef struct {
+    int cols;   // Number of columns (each column holds 4 bytes)
+    int start;  // How many bytes (of the current row) have already been filled
+} config_t;
+
+/* Assume this config is read from a configuration file earlier. */
+static config_t config = { .cols = 4, .start = 0 };
+
+#define BLOCK_SIZE 4                      // Each column holds 4 bytes.
+#define BLOCK_CHAR_COUNT (BLOCK_SIZE * 2) // 4 bytes → 8 characters.
+#define COL_WIDTH (BLOCK_CHAR_COUNT + 1)  // Plus one space separator.
+
+/* 
+ * Initializes the output row with the placeholder pattern.
+ * Each byte is expected to be rendered as two characters, so we fill each
+ * column with "........" (8 dots) followed by a space.
+ */
+static void init_row(char *row, int cols) {
+    int total_chars = cols * COL_WIDTH;
+    for (int col = 0; col < cols; col++) {
+        int base = col * COL_WIDTH;
+        for (int i = 0; i < BLOCK_CHAR_COUNT; i++) {
+            row[base + i] = '.';
+        }
+        row[base + BLOCK_CHAR_COUNT] = ' ';  // trailing space for the column.
+    }
+    row[cols * COL_WIDTH] = '\0';
+}
+
+/*
+ * For each call, we “profile” an output row – prefilled with dots – then overlay the new
+ * bytes into their proper positions. The position in the row (in bytes) is determined by
+ * config.start. When a row is complete, or when the new data is exhausted, we log the row.
+ *
+ * The mapping is as follows:
+ *   Each row has a capacity of (config.cols * BLOCK_SIZE) bytes.
+ *   For a byte to be placed at position 'pos' (0-based) within the row:
+ *     - The column index is pos / BLOCK_SIZE.
+ *     - The offset within that column is pos % BLOCK_SIZE.
+ *     - The character position in the row is:
+ *           col * COL_WIDTH + (offset * 2)
+ *     (Each byte occupies two characters.)
+ */
+static void log_buffered_data(uint8_t *buffer, int *buffered_length, int batch_bytes) {
+    int total = *buffered_length;
+    int index = 0;
+    int row_capacity = config.cols * BLOCK_SIZE;  // Number of bytes per output row.
+    const char hex_chars[] = "0123456789ABCDEF";
+    char row[256];  // Assume this is enough for our configured number of columns.
+    
+    logger_log(LOG_INFO, "%d bytes received: top", batch_bytes);
+    
+    /* Process the new bytes, possibly spanning multiple rows. */
+    while (index < total) {
+        init_row(row, config.cols);
+        int avail = row_capacity - config.start;      // How many bytes can we fill in this row.
+        int to_place = (total - index < avail) ? (total - index) : avail;
+        
+        /* Place new bytes into the profiled row. */
+        for (int i = 0; i < to_place; i++) {
+            int pos = config.start + i;  // Byte position within the row.
+            int col = pos / BLOCK_SIZE;
+            int offset = pos % BLOCK_SIZE;
+            int dest_index = col * COL_WIDTH + offset * 2;
+            uint8_t byte = buffer[index + i];
+            row[dest_index]     = hex_chars[byte >> 4];
+            row[dest_index + 1] = hex_chars[byte & 0x0F];
+        }
+        
+        config.start += to_place;
+        if (config.start >= row_capacity) {
+            config.start = 0;  // Start a fresh row on the next iteration.
+        }
+        index += to_place;
+        
+        logger_log(LOG_INFO, "%s", row);
+    }
+    
+    *buffered_length = 0;
+    logger_log(LOG_INFO, "%d bytes received: bottom", batch_bytes);
+}
 
 /**
  * Attempts to set up the socket connection, including retries with
@@ -33,7 +123,7 @@ extern volatile bool shutdown_flag;
 static SOCKET attempt_connection(bool is_server, bool is_tcp, struct sockaddr_in* addr,
     struct sockaddr_in* client_addr, const char* hostname, int port) {
     int backoff = 1;  // Start with a 1-second backoff.
-    while (!shutdown_flag) {
+    while (!shutdown_signalled()) {
         logger_log(LOG_DEBUG, "Client Manager Attempting to connect to server %s on port %d...", hostname, port);
         SOCKET sock = setup_socket(is_server, is_tcp, addr, client_addr, hostname, port);
         if (sock == INVALID_SOCKET) {
@@ -43,7 +133,10 @@ static SOCKET attempt_connection(bool is_server, bool is_tcp, struct sockaddr_in
                 get_socket_error_message(error_buffer, sizeof(error_buffer));
                 logger_log(LOG_ERROR, "%s", error_buffer);
             }
+            logger_log(LOG_DEBUG, "Client Manager Sleeping");
             sleep(backoff);
+            logger_log(LOG_DEBUG, "Client Manager Waking");
+
             backoff = (backoff < 32) ? backoff * 2 : 32;
             continue;
         }
@@ -60,7 +153,9 @@ static SOCKET attempt_connection(bool is_server, bool is_tcp, struct sockaddr_in
                     get_socket_error_message(error_buffer, sizeof(error_buffer));
                     logger_log(LOG_ERROR, "%s", error_buffer);
                 }
-                close_socket(&sock);
+                if (sock != INVALID_SOCKET) {
+                    close_socket(&sock);
+                }
                 sleep(backoff);
                 backoff = (backoff < 32) ? backoff * 2 : 32;
                 continue;
@@ -72,103 +167,10 @@ static SOCKET attempt_connection(bool is_server, bool is_tcp, struct sockaddr_in
             return sock;
         }
     }
-    if (shutdown_flag) {
-		logger_log(LOG_INFO, "Client Manager attempt to connect exiting due to app shutdown.");
+    while (!shutdown_signalled()) {
+        logger_log(LOG_INFO, "Client Manager attempt to connect exiting due to app shutdown.");
     }
     return INVALID_SOCKET;
-}
-
-/*
- * format_block() writes a formatted 32-bit block into dest.
- *
- * This function always produces 4 "byte slots" after the "0x" prefix. For each
- * carried slot, two dots ("..") are printed; for each new byte, its value is printed
- * in hex (using %02X). If there aren't enough bytes, the missing slots are filled with dots.
- */
-static void format_block(char* dest, size_t dest_size, const uint8_t* new_bytes_ptr,
-    int carried_bytes, int new_bytes) {
-    int n = snprintf(dest, dest_size, "0x");
-    // For carried (old) bytes, print dots
-    for (int i = 0; i < carried_bytes; i++) {
-        n += snprintf(dest + n, dest_size - n, "..");
-    }
-    // For the new bytes, print their hex values
-    for (int i = 0; i < new_bytes; i++) {
-        n += snprintf(dest + n, dest_size - n, "%02X", new_bytes_ptr[i]);
-    }
-    // Fill any remaining slots (to total 4 bytes) with dots
-    int missing = 4 - (carried_bytes + new_bytes);
-    for (int i = 0; i < missing; i++) {
-        n += snprintf(dest + n, dest_size - n, "..");
-    }
-    // Append a space at the end
-    snprintf(dest + n, dest_size - n, " ");
-}
-
-/*
- * log_buffered_data() logs the data accumulated since the last timeout.
- *
- */
-static void log_buffered_data(char* buffer, int* buffered_length, int batch_bytes) {
-
-    static int s_carry_length = 0;
-    // Total new bytes to consider = carried (from previous log) + current buffered bytes.
-    int total = s_carry_length + *buffered_length;
-    if (total == 0 && batch_bytes == 0)
-        return;
-
-    logger_log(LOG_INFO, "%d bytes received: top", batch_bytes);
-
-    int index = 0;
-    char block_str[64];
-
-    // If there are carried bytes from before, complete that block first.
-    if (s_carry_length > 0) {
-        int needed = 4 - s_carry_length;  // number of new bytes required to complete this block
-        if (*buffered_length >= needed) {
-            // Use the first 'needed' bytes from buffer to complete the block.
-            format_block(block_str, sizeof(block_str), buffer, s_carry_length, needed);
-            logger_log(LOG_INFO, "%s", block_str);
-            index += needed;
-            // Reset carried bytes since the block is now complete.
-            s_carry_length = 0;
-        }
-        else {
-            // Not enough new bytes to complete the block.
-            // Log the incomplete block using all the new bytes.
-            int new_bytes = *buffered_length;
-            format_block(block_str, sizeof(block_str), buffer, s_carry_length, new_bytes);
-            logger_log(LOG_INFO, "%s", block_str);
-            // Update carried count (but do not retain actual bytes).
-            s_carry_length += new_bytes;
-            *buffered_length = 0;
-            logger_log(LOG_INFO, "%d bytes received: bottom", batch_bytes);
-            return;
-        }
-    }
-
-    // Process complete blocks from the remaining new data.
-    while (index + 4 <= *buffered_length) {
-        format_block(block_str, sizeof(block_str), buffer + index, 0, 4);
-        logger_log(LOG_INFO, "%s", block_str);
-        index += 4;
-    }
-
-    // Process any leftover new bytes (incomplete block)
-    if (index < *buffered_length) {
-        int new_leftover = *buffered_length - index;
-        format_block(block_str, sizeof(block_str), buffer + index, 0, new_leftover);
-        logger_log(LOG_INFO, "%s", block_str);
-        // Save the count (we do not retain the actual data)
-        s_carry_length = new_leftover;
-    }
-    else {
-        s_carry_length = 0;
-    }
-
-    // Clear the buffer.
-    *buffered_length = 0;
-    logger_log(LOG_INFO, "%d bytes received: bottom", batch_bytes);
 }
 
 /*
@@ -176,7 +178,13 @@ static void log_buffered_data(char* buffer, int* buffered_length, int batch_byte
  * buffered length and the count of new bytes (batch_bytes) since the last log.
  */
 static bool handle_data_reception(SOCKET sock, char* buffer, int* buffered_length, int* batch_bytes) {
-	// only read after a select, so we know data is available
+    // only read after a select, so we know data is available
+    int buffer_available = BUFFER_SIZE - *buffered_length;
+    if (buffer_available < 0) {
+        logger_log(LOG_ERROR, "Buffer underflow detected! Available bytes: %d", buffer_available);
+    } else {
+        logger_log(LOG_DEBUG, "buffer available =- %d", buffer_available);
+    }
     int bytes = recv(sock, buffer + *buffered_length, BUFFER_SIZE - *buffered_length, 0);
     if (bytes <= 0) {
         char err_buf[SOCKET_ERROR_BUFFER_SIZE];
@@ -201,121 +209,152 @@ static bool handle_data_reception(SOCKET sock, char* buffer, int* buffered_lengt
  * @param sec      Seconds part of the timeout.
  * @param usec     Microseconds part of the timeout.
  */
-void setup_select_timeout(SOCKET sock, fd_set* read_fds, struct timeval* timeout, long sec, long usec) {
-    FD_ZERO(read_fds);
-    FD_SET(sock, read_fds);
+void setup_select_timeout(SOCKET* sock, fd_set* write_fds, struct timeval* timeout, long sec, long usec) {
+    FD_ZERO(write_fds);
+    if (sock != NULL && *sock != INVALID_SOCKET) {
+        FD_SET(*sock, write_fds);
+    }
+    else {
+        logger_log(LOG_ERROR, "Invalid socket before select()!");
+    }
     timeout->tv_sec = sec;
     timeout->tv_usec = usec;
 }
 
-/**
- * @brief Monitors a socket for incoming data and processes it.
- *
- * This function uses a single loop. Initially, it uses a blocking select()
- * with a 5‑second timeout. When data arrives, it switches to non‑blocking
- * checks (timeout = 0) to drain all available data before reverting to blocking mode.
- *
- * @param sock        The socket descriptor to monitor.
- * @param is_server   Unused flag indicating if this is a server.
- * @param is_tcp      Unused flag indicating if the protocol is TCP.
- * @param client_addr Unused pointer to client address information.
- */
-void client_comms_loop(SOCKET sock, int is_server, int is_tcp, struct sockaddr_in* client_addr, ClientThreadArgs_T* client_info) {
-    bool valid = true;
+typedef struct {
+    SOCKET* sock;  // Pointer to shared socket
+    struct sockaddr_in client_addr;
+    ClientThreadArgs_T* client_info;
+    volatile bool connection_closed;  // Shared flag to indicate socket closure
+} ClientCommArgs_T;
+
+
+void* client_receive_thread(void* arg) {
+    AppThreadArgs_T* thread_info = (AppThreadArgs_T*)arg;
+    set_thread_label(thread_info->label);
+    ClientCommArgs_T* comm_args = (ClientCommArgs_T*)thread_info->data;
+    SOCKET* sock = comm_args->sock;
+    ClientThreadArgs_T* client_info = comm_args->client_info;
+
     char buffer[BUFFER_SIZE];
     int buffered_length = 0;
     int batch_bytes = 0;
 
-    // Flag to determine whether to block (10-second timeout) or perform a non-blocking check.
-    bool blocking = true;
+    if (*sock == INVALID_SOCKET) {
+        logger_log(LOG_ERROR, "Invalid socket. Exiting receive thread.");
+        return NULL;
+    }
 
-    while (!shutdown_flag) {
+    while (!shutdown_signalled() && !comm_args->connection_closed) {
         fd_set read_fds;
         struct timeval timeout;
 
-        // Use a blocking timeout if waiting for new data, otherwise non-blocking.
-        if (blocking) {
-            setup_select_timeout(sock, &read_fds, &timeout, BLOCKING_TIMEOUT_SEC, 0);
+        setup_select_timeout(sock, &read_fds, &timeout, BLOCKING_TIMEOUT_SEC, 0);
+        int ret = select((int)(*sock) + 1, &read_fds, NULL, NULL, &timeout);
+        if (ret > 0 && FD_ISSET(*sock, &read_fds)) {
+            if (!handle_data_reception(*sock, buffer, &buffered_length, &batch_bytes)) {
+                logger_log(LOG_ERROR, "Connection closed by server. Closing socket.");
+                close_socket(sock);
+                *sock = INVALID_SOCKET;
+                comm_args->connection_closed = true;
+                break;
+            }
+            if (buffered_length > 0) {
+                log_buffered_data((uint8_t*)buffer, &buffered_length, batch_bytes);
+                batch_bytes = 0;
+            }
+        } else if (ret == 0) {
+            logger_log(LOG_DEBUG, "Timeout: No data received within %d seconds", BLOCKING_TIMEOUT_SEC);
+        } else {
+            logger_log(LOG_ERROR, "Select error in receive thread. Exiting loop.");
+            break;
         }
-        else {
-            setup_select_timeout(sock, &read_fds, &timeout, 0, 0);
-        }
+    }
 
-        int ret = select((int)sock + 1, &read_fds, NULL, NULL, &timeout);
+    if (*sock != INVALID_SOCKET) {
+        close_socket(sock);
+        *sock = INVALID_SOCKET;
+    }
+    comm_args->connection_closed = true;
 
-        if (ret < 0) {
-            logger_log(LOG_ERROR, "Select error. Exiting loop.");
-            char err_buf[SOCKET_ERROR_BUFFER_SIZE];
-            get_socket_error_message(err_buf, sizeof(err_buf));
-            logger_log(LOG_ERROR, "%s", err_buf);
-            valid = false;
-            close_socket(&sock);
+    logger_log(LOG_INFO, "Receive thread exiting.");
+    return NULL;
+}
+
+void* client_send_thread(void* arg) {
+    AppThreadArgs_T* thread_info = (AppThreadArgs_T*)arg;
+    set_thread_label(thread_info->label);
+    ClientCommArgs_T* comm_args = (ClientCommArgs_T*)thread_info->data;
+    SOCKET* sock = comm_args->sock;
+    ClientThreadArgs_T* client_info = comm_args->client_info;
+
+    while (!shutdown_signalled() && !comm_args->connection_closed) {
+        if (*sock == INVALID_SOCKET) {
+            logger_log(LOG_INFO, "Send thread detected socket closure. Exiting.");
             break;
         }
 
-        if (ret == 0) {
-            // If in non-blocking mode, a timeout means no more data is available.
-            if (!blocking) {
-                if (buffered_length > 0) {
-                    log_buffered_data(buffer, &buffered_length, batch_bytes);
-                }
-                else {
-                    logger_log(LOG_DEBUG, "Non-blocking check: No more data available");
-                }
-                // Reset to blocking mode for the next iteration.
-                blocking = true;
-                batch_bytes = 0;
-            }
-            else {
-                // In blocking mode, a timeout simply means no data was received during the wait.
-                logger_log(LOG_DEBUG, "Timeout: No data received within %d seconds", BLOCKING_TIMEOUT_SEC);
-            }
+        if (!client_info->send_test_data || client_info->data == NULL || client_info->send_interval_ms <= 0) {
+            sleep_ms(500);
             continue;
         }
 
-        // If select() indicates that data is available on the socket.
-        if (FD_ISSET(sock, &read_fds)) {
-            if (!handle_data_reception(sock, buffer, &buffered_length, &batch_bytes)) {
-                valid = false;
-                close_socket(&sock);
-                break;
-            }
-            // Data was received, so switch to non-blocking mode to drain any remaining data.
-            blocking = false;
-        }
-    }
-    // Check if we should send periodic data.
-    time_t last_send_time = 0;
-    if (client_info->send_test_data && client_info->data != NULL && client_info->send_interval_ms > 0) {
-        time_t now = time(NULL);
-        if (difftime(now, last_send_time) >= client_info->send_interval_ms) {
-            int sent = send(sock, client_info->data, client_info->data_size, 0);
+        fd_set write_fds;
+        struct timeval timeout;
+        setup_select_timeout(sock, &write_fds, &timeout, BLOCKING_TIMEOUT_SEC, 0);
+        int ret = select((int)*sock + 1, NULL, &write_fds, NULL, &timeout);
+
+        if (ret > 0 && FD_ISSET(*sock, &write_fds)) {
+            int sent = send(*sock, client_info->data, client_info->data_size, 0);
             if (sent == SOCKET_ERROR) {
                 logger_log(LOG_ERROR, "Send error while sending periodic data.");
-            }
-            else {
+                close_socket(sock);
+                *sock = INVALID_SOCKET;
+                comm_args->connection_closed = true;
+                break;
+            } else {
                 logger_log(LOG_INFO, "Periodic send: sent %d bytes", sent);
             }
-            last_send_time = now;
+            sleep_ms(client_info->send_interval_ms);
+        } else if (ret == 0) {
+            logger_log(LOG_DEBUG, "Timeout: No write availability within %d seconds", BLOCKING_TIMEOUT_SEC);
+        } else {
+            logger_log(LOG_ERROR, "Select error in send thread. Exiting loop.");
+            break;
         }
     }
 
-
-    if (shutdown_flag) {
-        logger_log(LOG_DEBUG, "Shutdown requested, exiting communication loop.");
-    }
+    logger_log(LOG_INFO, "Send thread exiting.");
+    return NULL;
 }
 
+AppThreadArgs_T send_thread_args = {
+	.suppressed = true,
+    .label = "CLIENT.SEND",
+    .func = client_send_thread,
+    .data = NULL,
+    .pre_create_func = pre_create_stub,
+    .post_create_func = post_create_stub,
+    .init_func = init_wait_for_logger,
+    .exit_func = exit_stub
+};
 
-/**
- * Main client thread entry point.
- */
+AppThreadArgs_T receive_thread_args = {
+    .suppressed = true,
+    .label = "CLIENT.RECEIVE",
+    .func = client_receive_thread,
+    .data = NULL,
+    .pre_create_func = pre_create_stub,
+    .post_create_func = post_create_stub,
+    .init_func = init_wait_for_logger,
+    .exit_func = exit_stub
+};
+
 void* clientMainThread(void* arg) {
     AppThreadArgs_T* thread_info = (AppThreadArgs_T*)arg;
     set_thread_label(thread_info->label);
     ClientThreadArgs_T* client_info = (ClientThreadArgs_T*)thread_info->data;
 
-    // Check for the server hostname in the configuration.    
     const char* config_server_hostname = get_config_string("network", "client.server_hostname", NULL);
     if (config_server_hostname) {
         strncpy(client_info->server_hostname, config_server_hostname, sizeof(client_info->server_hostname));
@@ -324,6 +363,7 @@ void* clientMainThread(void* arg) {
     client_info->port = get_config_int("network", "client.port", client_info->port);
     client_info->send_interval_ms = get_config_int("network", "client.send_interval_ms", client_info->send_interval_ms);
     client_info->send_test_data = get_config_bool("network", "client.send_test_data", false);
+    suppress_client_send_data = get_config_bool("debug", "suppress_client_send_data", false);
     logger_log(LOG_INFO, "Client Manager will attempt to connect to Server: %s, port: %d", client_info->server_hostname, client_info->port);
 
     int port = client_info->port;
@@ -332,20 +372,56 @@ void* clientMainThread(void* arg) {
     SOCKET sock = INVALID_SOCKET;
 
     struct sockaddr_in addr, client_addr;
-    memset(&addr, 0, sizeof(addr));
-    memset(&client_addr, 0, sizeof(client_addr));
 
-    // Attempt to connect to the server.
-    sock = attempt_connection(is_server, is_tcp, &addr, &client_addr,
-        client_info->server_hostname, port);
-    if (sock == INVALID_SOCKET) {
-        logger_log(LOG_INFO, "Shutdown requested before communication started.");
-        return NULL;
+    while (!shutdown_signalled()) {
+        memset(&addr, 0, sizeof(addr));
+        memset(&client_addr, 0, sizeof(client_addr));
+
+        sock = attempt_connection(is_server, is_tcp, &addr, &client_addr, client_info->server_hostname, port);
+        if (sock == INVALID_SOCKET) {
+            logger_log(LOG_INFO, "Shutdown requested before communication started.");
+            return NULL;
+        }
+
+        ClientCommArgs_T comm_args = {&sock, client_addr, client_info };
+        AppThreadArgs_T send_thread_args_local = send_thread_args;
+        AppThreadArgs_T receive_thread_args_local = receive_thread_args;
+        
+        send_thread_args_local.data = &comm_args;
+        receive_thread_args_local.data = &comm_args;
+        send_thread_args_local.suppressed = false;
+        receive_thread_args_local.suppressed = false;
+   
+        create_app_thread(&send_thread_args_local);
+        create_app_thread(&receive_thread_args_local);
+
+        // Wait for send and receive threads to complete with a timeout
+        while (!shutdown_signalled()) {
+
+            logger_log(LOG_INFO, "CLIENT: Looping on waiting for send and receive threads to indicate they're done");
+
+            DWORD send_thread_result = WaitForSingleObject(send_thread_args_local.thread_id, 5000); // 500 ms timeout
+            DWORD receive_thread_result = WaitForSingleObject(receive_thread_args_local.thread_id, 5000); // 500 ms timeout
+
+            if ((send_thread_result == WAIT_OBJECT_0 || send_thread_result == WAIT_FAILED) &&
+                (receive_thread_result == WAIT_OBJECT_0 || receive_thread_result == WAIT_FAILED)) {
+                break;
+            }
+        }
+
+        logger_log(LOG_INFO, "Closing socket 1");
+        if (sock != INVALID_SOCKET) {
+            logger_log(LOG_INFO, "Closing socket 2");
+            close_socket(&sock);
+        }
+
+        while (!shutdown_signalled()) {
+            logger_log(LOG_INFO, "CLIENT: Shutdown is signaled detected by client");
+            break;
+        }
+
+        logger_log(LOG_INFO, "CLIENT: Connection lost. Attempting to reconnect...");
     }
-
-    // Start the communication loop.
-    client_comms_loop(sock, is_server, is_tcp, &client_addr, client_info);
-    close_socket(&sock);
 
     logger_log(LOG_INFO, "CLIENT: Exiting client thread.");
     return NULL;

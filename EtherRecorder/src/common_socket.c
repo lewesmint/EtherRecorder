@@ -6,7 +6,8 @@
 #include "platform_utils.h"
 #include "logger.h"
 
-extern volatile bool shutdown_flag;
+extern bool shutdown_signalled(void);
+
 
 /**
  * Closes an individual socket and marks it as INVALID_SOCKET.
@@ -454,7 +455,7 @@ void communication_loop(SOCKET sock, int is_server, int is_tcp, struct sockaddr_
 
     while (valid_socket_connection) {
         // Check for shutdown condition if needed.
-        if (shutdown_flag) {
+        if (shutdown_signalled()) {
             logger_log(LOG_DEBUG, "Shutdown requested, exiting communication loop.");
             break;
         }

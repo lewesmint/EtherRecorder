@@ -64,14 +64,14 @@ bool g_trace_all = false;
 #endif
 
 
-static PlatformMutex_T logging_mutex; // Mutex for thread safety
+PlatformMutex_T logging_mutex; // Mutex for thread safety
 static ThreadLogFile thread_log_files[MAX_THREADS + 1]; // +1 for the main application log file
 
 // for high-resolution timestamps
-static ULARGE_INTEGER g_filetime_reference_ularge;
-static LARGE_INTEGER g_qpc_reference;
-static LARGE_INTEGER g_qpc_frequency;
-static int g_timestamp_initialised = 0;
+THREAD_LOCAL static ULARGE_INTEGER g_filetime_reference_ularge;
+THREAD_LOCAL static LARGE_INTEGER g_qpc_reference;
+THREAD_LOCAL static LARGE_INTEGER g_qpc_frequency;
+THREAD_LOCAL static int g_timestamp_initialised = 0;
 
 static LogTimestampGranularity g_log_timestamp_granularity = LOG_TS_NANOSECOND;  // Default
 static LogLevel g_log_level = LOG_DEBUG; // Current log level
@@ -91,7 +91,7 @@ static char log_file_name[MAX_PATH] = "log_file.log"; // Log file name
 static off_t g_log_file_size = 10485760;                // Log file size before rotation
 
 // Thread-specific log file
-THREAD_LOCAL static char thread_log_file[MAX_PATH] = "";
+__declspec(thread) static char thread_log_file[MAX_PATH] = "";
 
 static PlatformThread_T log_thread; // Logging thread
 static bool logging_thread_started = false; // indicate whether the logger thread has started
@@ -153,15 +153,17 @@ LogLevel log_level_from_string(const char* level_str, LogLevel default_level) {
 }
 
 
-/* Call this once at startup to calibrate the high-resolution timer with system time */
-void init_timestamp_system(void) {
+/**
+ * @brief Initializes the high-resolution timer for the current thread.
+ */
+void init_thread_timestamp_system(void) {
     /* Get the frequency once */
     QueryPerformanceFrequency(&g_qpc_frequency);
 
-    /* Capture the high-resolution counter for basiline */
+    /* Capture the high-resolution counter for baseline */
     QueryPerformanceCounter(&g_qpc_reference);
 
-    /* Immediately capture the system time as FILETIME to sync with high-resolution timer*/
+    /* Immediately capture the system time as FILETIME to sync with high-resolution timer */
     FILETIME file_time;
     GetSystemTimeAsFileTime(&file_time);
     g_filetime_reference_ularge.LowPart = file_time.dwLowDateTime;
@@ -193,12 +195,23 @@ static const char* get_log_level_colour(LogLevel level) {
  * @param entry The log entry.
  * @param log_output The file pointer (typically stderr for screen output).
  */
-#include <math.h>
-
 static void publish_log_entry(const LogEntry_T* entry, FILE* log_output) {
     if (!entry || !entry->message) {
         fprintf(stderr, "Log Error: Attempted to log NULL or blank message\n");
         return;
+    }
+
+    /* Initialize the timestamp system for the current thread if not already initialized */
+    if (!g_timestamp_initialised) {
+		// This should never happen, the timeing system needs to be initialisedsome time
+		// before it is first useds or it will give a zero or negative offset when
+		// g_filetime_reference_ularge is accessed immediately afterewards.
+		// So needs to all this functioon as part a threads own initialisation sequence.
+        // If is is not, and initialised here a slight delay needs to be introduced to
+		// to avoid the zero/negative offset.
+        init_thread_timestamp_system();
+		fprintf(stderr, "Log Error: Timestamp system  was not set prior initialised\n");
+        sleep(5);
     }
 
     /*

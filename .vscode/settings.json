@@ -11,5 +11,6 @@
     ],
     "files.associations": {
         "client_manager.h": "c"
-    }
+    },
+    "C_Cpp.errorSquiggles": "disabled"
 }

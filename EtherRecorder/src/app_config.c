@@ -1,6 +1,3 @@
-#ifndef CONFIG_H
-#define CONFIG_H
-
 #include "app_config.h"
 #include "platform_utils.h"
 
@@ -152,7 +149,7 @@ bool load_config(const char* filename, char* log_result) {
                 config_entries = entry;
 
                 // Log the stored configuration entry
-                printf("Stored config entry: Section [%s], Key [%s], Value [%s]\n", entry->section, entry->key, entry->value);
+                // printf("Stored config entry: Section [%s], Key [%s], Value [%s]\n", entry->section, entry->key, entry->value);
             }
         }
     }
@@ -229,5 +226,3 @@ void free_config() {
     }
     config_entries = NULL;
 }
-
-#endif // CONFIG_H
